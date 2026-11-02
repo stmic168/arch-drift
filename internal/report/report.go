@@ -81,6 +81,8 @@ type Report struct {
 	Graph    []drift.GraphEdge  `json:"graph"`
 	Missing  []string           `json:"missing_nodes"`
 	Undoc    []string           `json:"undocumented_nodes"`
+	Lock     string             `json:"lock,omitempty"`
+	Notes    []string           `json:"notes"`
 }
 
 // Input bundles everything needed to build a report.
@@ -91,6 +93,8 @@ type Input struct {
 	Dropped                   []docmodel.Dropped
 	Result                    *drift.Result
 	Usage                     docmodel.Usage
+	Lock                      string   // lock file path when the doc model came from a lock
+	Notes                     []string // warnings shown at the top of the report
 }
 
 // Build assembles the report.
@@ -110,7 +114,7 @@ func Build(in Input) *Report {
 		s.ExitCode = 1
 	}
 	u := UsageReport{Usage: in.Usage, Requested: in.RequestedModel}
-	if in.Usage.Source == "recorded" {
+	if in.Usage.Source == "recorded" || in.Usage.Source == "lock" {
 		u.Requested = "" // --doc-model: no model was called
 	}
 	if c, ok := Cost(in.Usage); ok {
@@ -120,11 +124,17 @@ func Build(in Input) *Report {
 			u.CostNote = "estimated from list prices; cache writes at 1.25x input, cache reads at 0.1x input"
 		case "cache":
 			u.CostNote = "doc model served from local cache; no API call"
+		case "lock":
+			u.CostNote = "doc model read from the reviewed lock file; no API call"
 		default:
 			u.CostNote = "doc model loaded from a recorded file; no API call"
 		}
 	} else {
 		u.CostNote = "no price known for model " + in.Usage.Model
+	}
+	notes := in.Notes
+	if notes == nil {
+		notes = []string{}
 	}
 	dropped := in.Dropped
 	if dropped == nil {
@@ -135,6 +145,7 @@ func Build(in Input) *Report {
 		Summary: s, Findings: in.Result.Findings, Dropped: dropped, Usage: u,
 		Code: in.Code, DocModel: in.DocModel, Graph: in.Result.Graph,
 		Missing: in.Result.MissingNodes, Undoc: in.Result.UndocumentedNodes,
+		Lock: in.Lock, Notes: notes,
 	}
 }
 
@@ -174,8 +185,20 @@ func Markdown(r *Report) string {
 	fmt.Fprintf(&b, "- **Result:** %s (exit %d)\n", verdict, r.Summary.ExitCode)
 	fmt.Fprintf(&b, "- **Repo:** `%s` (module `%s`)\n", r.Repo, r.Module)
 	fmt.Fprintf(&b, "- **Design doc:** `%s`\n", r.Doc)
-	fmt.Fprintf(&b, "- **Doc model source:** %s\n", r.Usage.Source)
+	if r.Lock != "" {
+		fmt.Fprintf(&b, "- **Doc model source:** %s (`%s`)\n", r.Usage.Source, r.Lock)
+	} else {
+		fmt.Fprintf(&b, "- **Doc model source:** %s\n", r.Usage.Source)
+	}
 	fmt.Fprintf(&b, "- **Code components:** %d, **import edges:** %d\n\n", len(r.Code.Components), len(r.Code.Edges))
+
+	if len(r.Notes) > 0 {
+		b.WriteString("## Notes\n\n")
+		for _, n := range r.Notes {
+			fmt.Fprintf(&b, "- %s\n", n)
+		}
+		b.WriteString("\n")
+	}
 
 	b.WriteString("## Summary\n\n| Finding | Severity | Fails check | Count |\n|---|---|---|---|\n")
 	rows := []struct{ t, sev, fail string }{

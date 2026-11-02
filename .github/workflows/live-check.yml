@@ -36,7 +36,7 @@ jobs:
       - name: Run 1 (calls the API)
         run: |
           set +e
-          ./archdrift check --repo testdata/shop --doc testdata/shop/design.md --model "$MODEL" --out live
+          ./archdrift check --repo testdata/shop --doc testdata/shop/design.md --model "$MODEL" --no-lock --out live
           code=$?
           set -e
           echo "exit code: $code"
@@ -49,7 +49,7 @@ jobs:
       - name: Run 2 (must be served from cache)
         run: |
           set +e
-          ./archdrift check --repo testdata/shop --doc testdata/shop/design.md --model "$MODEL" --out live
+          ./archdrift check --repo testdata/shop --doc testdata/shop/design.md --model "$MODEL" --no-lock --out live
           code=$?
           set -e
           echo "exit code: $code"

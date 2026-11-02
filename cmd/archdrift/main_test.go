@@ -18,6 +18,7 @@ const (
 	fixtureDoc   = fixtureRepo + "/design.md"
 	fixtureModel = fixtureRepo + "/docmodel.json"
 	fixtureWant  = fixtureRepo + "/expected.json"
+	fixtureLock  = fixtureRepo + "/design.lock.json"
 )
 
 type expected struct {
@@ -184,7 +185,7 @@ func TestCachedAPIPath(t *testing.T) {
 		}
 		return fakeExtractor{&calls}
 	}
-	args := []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--out", out}
+	args := []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--no-lock", "--out", out}
 	var so, se bytes.Buffer
 	if code := run(context.Background(), args, &so, &se, newExt); code != 1 {
 		t.Fatalf("first run exit %d: %s", code, se.String())
@@ -243,6 +244,121 @@ func TestErrorsExitTwo(t *testing.T) {
 	for _, args := range cases {
 		if code := run(context.Background(), args, &so, &se, nil); code != 2 {
 			t.Errorf("run(%v) = %d, want 2", args, code)
+		}
+	}
+}
+
+func failingExtractor(t *testing.T) func(string) docmodel.Extractor {
+	return func(string) docmodel.Extractor {
+		t.Fatal("the API extractor must not be used when a fresh lock exists")
+		return nil
+	}
+}
+
+func findingsOf(t *testing.T, out string) []string {
+	t.Helper()
+	var got reportJSON
+	b, err := os.ReadFile(filepath.Join(out, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	var s []string
+	for _, f := range got.Findings {
+		s = append(s, f.Type+" "+f.Subject)
+	}
+	return s
+}
+
+func expectedFindings(t *testing.T) []string {
+	t.Helper()
+	var want expected
+	b, _ := os.ReadFile(fixtureWant)
+	if err := json.Unmarshal(b, &want); err != nil {
+		t.Fatal(err)
+	}
+	var s []string
+	for _, f := range want.Findings {
+		s = append(s, f.Type+" "+f.Subject)
+	}
+	return s
+}
+
+// The committed fixture lock must be exactly what `archdrift lock` produces.
+func TestFixtureLockIsUpToDate(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "design.lock.json")
+	var so, se bytes.Buffer
+	code := run(context.Background(), []string{"lock", "--repo", fixtureRepo, "--doc", fixtureDoc, "--doc-model", fixtureModel, "--lock", p}, &so, &se, nil)
+	if code != 0 {
+		t.Fatalf("lock exit %d: %s", code, se.String())
+	}
+	got, _ := os.ReadFile(p)
+	want, err := os.ReadFile(fixtureLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("testdata/shop/design.lock.json is out of date; regenerate it with archdrift lock --doc-model")
+	}
+	for _, s := range []string{"Notifier", "(no code: will be MISSING_COMPONENT)", "pkg/metrics", "component Billing: quote not found in doc"} {
+		if !strings.Contains(so.String(), s) {
+			t.Errorf("lock review output missing %q:\n%s", s, so.String())
+		}
+	}
+}
+
+func TestCheckUsesLockWithoutAPI(t *testing.T) {
+	out := t.TempDir()
+	var so, se bytes.Buffer
+	code := run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--out", out}, &so, &se, failingExtractor(t))
+	if code != 1 {
+		t.Fatalf("exit %d: %s", code, se.String())
+	}
+	if got, want := findingsOf(t, out), expectedFindings(t); !reflect.DeepEqual(got, want) {
+		t.Fatalf("findings:\n got  %v\n want %v", got, want)
+	}
+	md, _ := os.ReadFile(filepath.Join(out, "report.md"))
+	if !bytes.Contains(md, []byte("lock (`../../testdata/shop/design.lock.json`)")) || !bytes.Contains(md, []byte("read from the reviewed lock file")) {
+		t.Errorf("report does not show the lock source:\n%s", md)
+	}
+}
+
+func TestStaleLockIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	doc, _ := os.ReadFile(fixtureDoc)
+	edited := filepath.Join(dir, "design.md")
+	os.WriteFile(edited, append(doc, []byte("\nA new paragraph.\n")...), 0o644)
+	var so, se bytes.Buffer
+	code := run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", edited, "--lock", fixtureLock, "--out", filepath.Join(dir, "out")}, &so, &se, failingExtractor(t))
+	if code != 2 || !strings.Contains(se.String(), "lock file is stale") {
+		t.Fatalf("exit %d, stderr %q", code, se.String())
+	}
+	// An explicit --lock that does not exist is an error, not a silent API call.
+	code = run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--lock", filepath.Join(dir, "nope.json"), "--out", filepath.Join(dir, "out")}, &so, &se, failingExtractor(t))
+	if code != 2 {
+		t.Fatalf("missing explicit lock: exit %d", code)
+	}
+}
+
+func TestLockNotesWhenCodeChanged(t *testing.T) {
+	l, err := docmodel.LoadLock(fixtureLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.CodeIDs = append([]string{"internal/legacy"}, l.CodeIDs[1:]...) // drop cmd/api, add internal/legacy
+	p := filepath.Join(t.TempDir(), "old.lock.json")
+	if err := docmodel.WriteLock(p, l); err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	var so, se bytes.Buffer
+	run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--lock", p, "--out", out}, &so, &se, failingExtractor(t))
+	md, _ := os.ReadFile(filepath.Join(out, "report.md"))
+	for _, s := range []string{"## Notes", "added since the lock was written: cmd/api", "removed since the lock was written: internal/legacy"} {
+		if !bytes.Contains(md, []byte(s)) {
+			t.Errorf("report missing %q", s)
 		}
 	}
 }
