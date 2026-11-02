@@ -237,6 +237,9 @@ func TestErrorsExitTwo(t *testing.T) {
 		{"check", "--repo", "does-not-exist", "--doc", fixtureDoc, "--doc-model", fixtureModel, "--out", t.TempDir()},
 		{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--doc-model", "missing.json", "--out", t.TempDir()},
 	}
+	empty := filepath.Join(t.TempDir(), "empty.json")
+	os.WriteFile(empty, []byte(`{"components":[],"relations":[]}`), 0o644)
+	cases = append(cases, []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--doc-model", empty, "--out", t.TempDir()})
 	for _, args := range cases {
 		if code := run(context.Background(), args, &so, &se, nil); code != 2 {
 			t.Errorf("run(%v) = %d, want 2", args, code)

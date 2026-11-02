@@ -9,7 +9,7 @@
 | Path | State |
 |---|---|
 | Offline (`--doc-model`) | working, covered by the golden end-to-end test |
-| Live API (`AnthropicExtractor`) | **not yet run against the real API**; request shape and response decoding are unit-tested offline. Without credentials it fails cleanly with exit 2. |
+| Live API (`AnthropicExtractor`) | verified with `claude-sonnet-5-5` through the `live-check` workflow: the 5 failing findings on the fixture match `expected.json`, 0 dropped claims, about 1.7K input / 1.2K output tokens (~$0.015) per uncached run. Output varies between calls (sampling cannot be pinned on current models): one early run returned a near-empty doc model, which now exits 2 instead of producing a report. |
 
 ## Requirements
 
@@ -107,10 +107,10 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 ## CI
 
 - `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: `go vet`, `go test`, and an offline fixture run that must exit 1.
-- `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture, so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), warns if the live findings differ from `expected.json`, puts `report.md` in the job summary, and uploads the reports as an artifact. GitHub only shows **Run workflow** once the workflow file is on the default branch.
+- `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture, so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), prints the doc model and dropped claims to the log, fails if the failing findings differ from `expected.json` (a different `UNVERIFIABLE` set is only a notice, since it depends on how the model reads runtime relations), puts `report.md` in the job summary, and uploads the reports as an artifact. You can pick a branch under **Use workflow from**. GitHub only shows **Run workflow** once the workflow file is on the default branch.
 
 ## Limitations
 
-- The live API path has not been run against the real API yet (no credentials in the build environment). Its request shape and response decoding are unit-tested offline only.
+- The doc model comes from an LLM and can differ between uncached runs; the cache makes repeated runs on the same doc stable.
 - Cost is an estimate from list prices (cache writes 1.25x input, cache reads 0.1x input). With a server-side fallback, it is priced at the serving model's rate.
 - Packages outside `cmd/`, `internal/`, `pkg/` are ignored.

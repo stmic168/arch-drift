@@ -2,7 +2,6 @@ package docmodel
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -163,9 +162,16 @@ func DecodeResponse(resp *anthropic.BetaMessage) (*Model, Usage, error) {
 	if strings.TrimSpace(text.String()) == "" {
 		return nil, u, errors.New("model returned no text content")
 	}
-	var m Model
-	if err := json.Unmarshal([]byte(text.String()), &m); err != nil {
-		return nil, u, fmt.Errorf("decode structured output: %w", err)
+	m, err := Parse([]byte(text.String()))
+	if err != nil {
+		return nil, u, fmt.Errorf("decode structured output: %w; output starts with %q", err, excerpt(text.String(), 300))
 	}
-	return &m, u, nil
+	return m, u, nil
+}
+
+func excerpt(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

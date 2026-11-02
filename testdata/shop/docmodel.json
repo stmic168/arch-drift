@@ -16,6 +16,7 @@
     {"from": "API Gateway", "to": "Catalog", "kind": "required", "protocol": "in-process", "quote": "The API Gateway calls Orders and Catalog in-process."},
     {"from": "API Gateway", "to": "Store", "kind": "forbidden", "protocol": "", "quote": "The API Gateway must never access the Store directly; all persistence goes through Orders."},
     {"from": "API Gateway", "to": "Worker", "kind": "required", "protocol": "Kafka", "quote": "The API Gateway publishes order events to the Worker via Kafka."},
+    {"from": "API Gateway", "to": "Kafka", "kind": "required", "protocol": "Kafka", "quote": "The API Gateway publishes order events to the Worker via Kafka."},
     {"from": "Orders", "to": "Store", "kind": "required", "protocol": "", "quote": "Orders persists orders through the Store."},
     {"from": "Orders", "to": "Store", "kind": "forbidden", "protocol": "", "quote": "Orders must never import the Store package."},
     {"from": "Orders", "to": "Payments", "kind": "required", "protocol": "", "quote": "Orders calls Payments to charge the customer."},

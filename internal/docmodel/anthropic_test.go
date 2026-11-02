@@ -50,6 +50,14 @@ func TestDecodeResponse(t *testing.T) {
 	}
 }
 
+func TestDecodeResponseRejectsWrongShape(t *testing.T) {
+	wrong := message(t, `{"id":"m","type":"message","role":"assistant","model":"claude-sonnet-5-5","stop_reason":"end_turn",
+		"content":[{"type":"text","text":`+jsonString(`{"result":{"components":[]}}`)+`}],"usage":{"input_tokens":1,"output_tokens":1}}`)
+	if _, _, err := DecodeResponse(wrong); err == nil || !strings.Contains(err.Error(), "output starts with") {
+		t.Fatalf("want decode error with excerpt, got %v", err)
+	}
+}
+
 func jsonString(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)

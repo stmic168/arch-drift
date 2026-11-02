@@ -22,6 +22,7 @@ func TestScanFixture(t *testing.T) {
 
 	type e struct{ from, to, ev string }
 	want := []e{
+		{"cmd/api", "ext:kafka", "cmd/api/main.go:12"},
 		{"cmd/api", "internal/catalog", "cmd/api/main.go:8"},
 		{"cmd/api", "internal/orders", "cmd/api/main.go:9"},
 		{"cmd/api", "internal/store", "cmd/api/main.go:10"},
