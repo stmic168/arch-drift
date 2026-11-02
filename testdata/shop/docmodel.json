@@ -1,0 +1,29 @@
+{
+  "components": [
+    {"name": "API Gateway", "code_ids": ["cmd/api"], "quote": "**API Gateway** (`cmd/api`): the public HTTP entry point for browsers and mobile apps."},
+    {"name": "Worker", "code_ids": ["cmd/worker"], "quote": "**Worker** (`cmd/worker`): a background process that fulfils orders."},
+    {"name": "Orders", "code_ids": ["internal/orders", "internal/legacyorders"], "quote": "**Orders**: the order domain logic, shared by the API Gateway and the Worker."},
+    {"name": "Catalog", "code_ids": ["internal/catalog"], "quote": "**Catalog**: serves the product catalogue."},
+    {"name": "Payments", "code_ids": ["internal/payments"], "quote": "**Payments**: charges customers when an order is fulfilled."},
+    {"name": "Store", "code_ids": ["internal/store"], "quote": "**Store**: the only module allowed to talk to the database."},
+    {"name": "PostgreSQL", "code_ids": ["ext:postgres"], "quote": "**PostgreSQL** is the system of record."},
+    {"name": "Kafka", "code_ids": ["ext:kafka"], "quote": "**Kafka** carries order events between processes."},
+    {"name": "Notifier", "code_ids": [], "quote": "**Notifier**: a service that emails customers when their order ships."},
+    {"name": "Billing", "code_ids": ["internal/payments"], "quote": "Billing is handled by Stripe Connect."}
+  ],
+  "relations": [
+    {"from": "API Gateway", "to": "Orders", "kind": "required", "protocol": "in-process", "quote": "The API Gateway calls Orders and Catalog in-process."},
+    {"from": "API Gateway", "to": "Catalog", "kind": "required", "protocol": "in-process", "quote": "The API Gateway calls Orders and Catalog in-process."},
+    {"from": "API Gateway", "to": "Store", "kind": "forbidden", "protocol": "", "quote": "The API Gateway must never access the Store directly; all persistence goes through Orders."},
+    {"from": "API Gateway", "to": "Worker", "kind": "required", "protocol": "Kafka", "quote": "The API Gateway publishes order events to the Worker via Kafka."},
+    {"from": "Orders", "to": "Store", "kind": "required", "protocol": "", "quote": "Orders persists orders through the Store."},
+    {"from": "Orders", "to": "Store", "kind": "forbidden", "protocol": "", "quote": "Orders must never import the Store package."},
+    {"from": "Orders", "to": "Payments", "kind": "required", "protocol": "", "quote": "Orders calls Payments to charge the customer."},
+    {"from": "Catalog", "to": "Store", "kind": "required", "protocol": "", "quote": "Catalog reads products from the Store."},
+    {"from": "Store", "to": "PostgreSQL", "kind": "required", "protocol": "SQL", "quote": "The Store is the only component that connects to PostgreSQL, using SQL."},
+    {"from": "Worker", "to": "Kafka", "kind": "required", "protocol": "Kafka", "quote": "The Worker consumes order events from Kafka."},
+    {"from": "Worker", "to": "Store", "kind": "required", "protocol": "", "quote": "The Worker opens a Store connection and hands it to Orders for fulfilment."},
+    {"from": "Worker", "to": "Orders", "kind": "required", "protocol": "", "quote": "The Worker opens a Store connection   and hands it\nto Orders for fulfilment."},
+    {"from": "Worker", "to": "Notifier", "kind": "required", "protocol": "HTTP", "quote": "The Worker asks the Notifier over HTTP to email the customer."}
+  ]
+}
