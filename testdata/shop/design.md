@@ -20,7 +20,7 @@ This document describes the target architecture of the shop backend.
 
 The API Gateway calls Orders and Catalog in-process.
 The API Gateway must never access the Store directly; all persistence goes through Orders.
-The API Gateway publishes order events to the Worker via Kafka.
+The API Gateway publishes order events to Kafka.
 
 Orders persists orders through the Store.
 Orders calls Payments to charge the customer.
@@ -31,13 +31,16 @@ The Store is the only component that connects to PostgreSQL, using SQL.
 
 The Worker consumes order events from Kafka.
 The Worker opens a Store connection and hands it to Orders for fulfilment.
+The Worker calls the API Gateway over HTTP to fetch order details.
 The Worker asks the Notifier over HTTP to email the customer.
 
 ```mermaid
 flowchart LR
   api[API Gateway] --> orders[Orders]
   api --> catalog[Catalog]
-  api -. Kafka .-> worker[Worker]
+  api --> kafka[(Kafka)]
+  kafka --> worker[Worker]
+  worker -. HTTP .-> api
   worker --> orders
   orders --> store[Store]
   orders --> payments[Payments]

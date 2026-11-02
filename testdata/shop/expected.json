@@ -6,7 +6,7 @@
     {"type": "MISSING_EDGE", "subject": "Catalog -> Store", "code_evidence": []},
     {"type": "UNDOCUMENTED_COMPONENT", "subject": "pkg/metrics", "code_evidence": ["pkg/metrics/metrics.go:2"]},
     {"type": "UNDOCUMENTED_EDGE", "subject": "Orders -> PostgreSQL", "code_evidence": ["internal/orders/repo/repo.go:5"]},
-    {"type": "UNVERIFIABLE", "subject": "API Gateway -> Worker", "code_evidence": []}
+    {"type": "UNVERIFIABLE", "subject": "Worker -> API Gateway", "code_evidence": []}
   ],
   "dropped_claims": [
     {"claim": "code_id", "name": "Orders", "detail": "internal/legacyorders"},
