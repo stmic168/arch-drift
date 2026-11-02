@@ -30,10 +30,13 @@ const (
 
 const usage = `usage:
   archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock] [--config <json>]
+  archdrift baseline --repo <path> --doc <design.md> [same flags as check]
   archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--config <json>]
 
 check  compares code with the doc and writes <out>/report.md and report.json.
 lock   extracts the doc model once and writes a lock file to review and commit.
+baseline  accepts every current failing finding into archdrift.baseline.json
+       (existing reasons are kept; new entries need a reason before committing).
        While the doc is unchanged, check reads the lock and never calls the API.
 
   --repo       Go repository root (must contain go.mod)
@@ -44,13 +47,14 @@ lock   extracts the doc model once and writes a lock file to review and commit.
   --lock       lock file path (default: next to the doc, design.md -> design.lock.json)
   --no-lock    check only: ignore the lock and extract from the doc
   --config     config file (default: archdrift.json at the repo root, if present)
+  --baseline   baseline file (default: archdrift.baseline.json at the repo root, if present)
 
-Exit codes: check 0 no drift, 1 drift, 2 error; lock 0 written, 2 error.
+Exit codes: check 0 no drift, 1 drift, 2 error; lock and baseline 0 written, 2 error.
 `
 
 type options struct {
-	repo, doc, out, model, docModel, lock, config string
-	noLock                                        bool
+	repo, doc, out, model, docModel, lock, config, baseline, today string
+	noLock                                                         bool
 
 	// resolved from the config file
 	configPath string
@@ -65,7 +69,7 @@ func main() {
 // run executes the CLI. newExtractor, when non-nil, replaces the live API
 // extractor (used by tests).
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtractor func(model string) docmodel.Extractor) int {
-	if len(args) == 0 || (args[0] != "check" && args[0] != "lock") {
+	if len(args) == 0 || (args[0] != "check" && args[0] != "lock" && args[0] != "baseline") {
 		fmt.Fprint(stderr, usage)
 		return exitError
 	}
@@ -81,8 +85,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 	fs.StringVar(&o.docModel, "doc-model", "", "")
 	fs.StringVar(&o.lock, "lock", "", "")
 	fs.StringVar(&o.config, "config", "", "")
-	if cmd == "check" {
+	if cmd != "lock" {
 		fs.BoolVar(&o.noLock, "no-lock", false, "")
+		fs.StringVar(&o.baseline, "baseline", "", "")
+		fs.StringVar(&o.today, "today", "", "") // YYYY-MM-DD, for reproducible runs and tests
 	}
 	if err := fs.Parse(args[1:]); err != nil {
 		return exitError
@@ -104,8 +110,17 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 		}
 		return docmodel.CachedExtractor{Inner: inner, Dir: filepath.Join(o.out, "cache"), ModelName: o.model}
 	}
-	if cmd == "lock" {
+	if o.today == "" {
+		o.today = time.Now().UTC().Format(time.DateOnly)
+	} else if _, err := time.Parse(time.DateOnly, o.today); err != nil {
+		fmt.Fprintln(stderr, "archdrift: --today must be YYYY-MM-DD")
+		return exitError
+	}
+	switch cmd {
+	case "lock":
 		return runLock(ctx, o, apiExtractor, stdout, stderr)
+	case "baseline":
+		return runBaseline(ctx, o, apiExtractor, stdout, stderr)
 	}
 	return runCheck(ctx, o, apiExtractor, stdout, stderr)
 }
@@ -166,14 +181,21 @@ func extract(ctx context.Context, ext docmodel.Extractor, in *inputs, model stri
 	return raw, usage, nil
 }
 
-func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extractor, stdout, stderr io.Writer) int {
-	fail := func(err error) int {
-		fmt.Fprintf(stderr, "archdrift: %v\n", err)
-		return exitError
-	}
+// analysis is the result of the check pipeline before baseline and report.
+type analysis struct {
+	in       *inputs
+	verified *docmodel.Model
+	dropped  []docmodel.Dropped
+	res      *drift.Result
+	usage    docmodel.Usage
+	lockPath string
+	notes    []string
+}
+
+func analyze(ctx context.Context, o options, apiExtractor func() docmodel.Extractor) (*analysis, error) {
 	in, err := load(o)
 	if err != nil {
-		return fail(err)
+		return nil, err
 	}
 
 	var (
@@ -197,7 +219,7 @@ func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extra
 		case errors.Is(err, fs.ErrNotExist) && o.lock == "":
 			ext = apiExtractor() // no lock next to the doc: extract live
 		default:
-			return fail(fmt.Errorf("read lock: %w", err))
+			return nil, fmt.Errorf("read lock: %w", err)
 		}
 	default:
 		ext = apiExtractor()
@@ -205,15 +227,55 @@ func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extra
 
 	raw, usage, err := extract(ctx, ext, in, o.model)
 	if err != nil {
+		return nil, err
+	}
+	verified, dropped := docmodel.Verify(raw, in.doc, in.code.IDs())
+	return &analysis{in: in, verified: verified, dropped: dropped, res: drift.Diff(in.code, verified, o.diff),
+		usage: usage, lockPath: lockPath, notes: notes}, nil
+}
+
+// loadBaseline reads --baseline, or archdrift.baseline.json at the repo root
+// when present. A missing explicit file is an error for check (a typo would
+// silently fail every accepted finding) but fine for baseline, which creates it.
+func loadBaseline(o options, creating bool) (*drift.Baseline, string, error) {
+	p := o.baseline
+	if p == "" {
+		p = filepath.Join(o.repo, drift.BaselineFile)
+	}
+	bl, err := drift.LoadBaseline(p)
+	switch {
+	case err == nil:
+		return bl, p, nil
+	case errors.Is(err, fs.ErrNotExist) && (o.baseline == "" || creating):
+		return nil, p, nil
+	default:
+		return nil, p, fmt.Errorf("baseline: %w", err)
+	}
+}
+
+func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extractor, stdout, stderr io.Writer) int {
+	fail := func(err error) int {
+		fmt.Fprintf(stderr, "archdrift: %v\n", err)
+		return exitError
+	}
+	bl, blPath, err := loadBaseline(o, false)
+	if err != nil {
 		return fail(err)
 	}
-	ids := in.code.IDs()
-	verified, dropped := docmodel.Verify(raw, in.doc, ids)
-	res := drift.Diff(in.code, verified, o.diff)
+	a, err := analyze(ctx, o, apiExtractor)
+	if err != nil {
+		return fail(err)
+	}
+	in, verified, dropped, res, usage, lockPath, notes := a.in, a.verified, a.dropped, a.res, a.usage, a.lockPath, a.notes
+	shownBaseline := ""
+	if bl != nil {
+		notes = append(notes, drift.ApplyBaseline(res, bl, o.today)...)
+		shownBaseline = filepath.ToSlash(filepath.Clean(blPath))
+	}
 	rep := report.Build(report.Input{
 		Repo: filepath.ToSlash(filepath.Clean(o.repo)), Doc: filepath.ToSlash(filepath.Clean(o.doc)),
 		RequestedModel: o.model, Code: in.code, DocModel: verified, Dropped: dropped, Result: res, Usage: usage,
-		Lock: lockPath, Notes: notes, Config: o.configPath,
+		Lock: lockPath, Notes: notes, Config: o.configPath, Baseline: shownBaseline,
 	})
 	if err := report.Write(o.out, rep); err != nil {
 		return fail(fmt.Errorf("write report: %w", err))
@@ -222,14 +284,53 @@ func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extra
 	if rep.Summary.Drift {
 		verdict = "drift detected"
 	}
-	fmt.Fprintf(stdout, "archdrift: %s: %d failing finding(s), %d unverifiable, %d dropped claim(s) [doc model: %s]\n",
-		verdict, rep.Summary.Failing, rep.Summary.ByType[drift.Unverifiable], rep.Summary.Dropped, usage.Source)
+	accepted := ""
+	if rep.Summary.Accepted > 0 {
+		accepted = fmt.Sprintf(", %d accepted by baseline", rep.Summary.Accepted)
+	}
+	fmt.Fprintf(stdout, "archdrift: %s: %d failing finding(s), %d unverifiable, %d dropped claim(s)%s [doc model: %s]\n",
+		verdict, rep.Summary.Failing, rep.Summary.ByType[drift.Unverifiable], rep.Summary.Dropped, accepted, usage.Source)
 	for _, n := range notes {
 		fmt.Fprintf(stdout, "note: %s\n", n)
 	}
 	fmt.Fprintf(stdout, "report: %s\n", filepath.Join(o.out, "report.md"))
 	if rep.Summary.Drift {
 		return exitDrift
+	}
+	return exitOK
+}
+
+// baselineDays is how long a new baseline entry stays accepted by default.
+const baselineDays = 90
+
+func runBaseline(ctx context.Context, o options, apiExtractor func() docmodel.Extractor, stdout, stderr io.Writer) int {
+	fail := func(err error) int {
+		fmt.Fprintf(stderr, "archdrift: %v\n", err)
+		return exitError
+	}
+	prev, p, err := loadBaseline(o, true)
+	if err != nil {
+		return fail(err)
+	}
+	a, err := analyze(ctx, o, apiExtractor)
+	if err != nil {
+		return fail(err)
+	}
+	bl := drift.NewBaseline(a.res, prev, o.today, baselineDays)
+	if err := drift.WriteBaseline(p, bl); err != nil {
+		return fail(fmt.Errorf("write baseline: %w", err))
+	}
+	kept, added := 0, 0
+	for _, e := range bl.Accepted {
+		if e.Reason == drift.TodoReason {
+			added++
+		} else {
+			kept++
+		}
+	}
+	fmt.Fprintf(stdout, "archdrift: wrote %s: %d accepted finding(s) (%d kept, %d new)\n", p, len(bl.Accepted), kept, added)
+	if added > 0 {
+		fmt.Fprintf(stdout, "Replace each %q with the real reason and adjust \"expires\" (default %d days) before committing.\n", drift.TodoReason, baselineDays)
 	}
 	return exitOK
 }

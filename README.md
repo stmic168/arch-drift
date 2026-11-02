@@ -26,6 +26,7 @@ go build -o archdrift ./cmd/archdrift
 ```bash
 ./archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock]
 ./archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>]
+./archdrift baseline --repo <path> --doc <design.md> [same flags as check]
 ```
 
 | Flag | Default | Meaning |
@@ -38,8 +39,10 @@ go build -o archdrift ./cmd/archdrift
 | `--lock` | next to the doc (`design.md` -> `design.lock.json`) | lock file to read (`check`) or write (`lock`) |
 | `--no-lock` | | `check` only: ignore the lock and extract from the doc |
 | `--config` | `archdrift.json` at the repo root, if present | per-repo configuration (below) |
+| `--baseline` | `archdrift.baseline.json` at the repo root, if present | accepted known drift (below) |
+| `--today` | current UTC date | `YYYY-MM-DD` used for baseline expiry; set it for reproducible runs |
 
-Exit codes: `check` returns `0` no drift, `1` drift, `2` error; `lock` returns `0` written, `2` error. `UNVERIFIABLE` findings never fail the check.
+Exit codes: `check` returns `0` no drift, `1` drift, `2` error; `lock` and `baseline` return `0` written, `2` error. `UNVERIFIABLE` findings never fail the check.
 
 ### Lock file (recommended workflow)
 
@@ -70,6 +73,29 @@ report: /tmp/shop-report/report.md
 ```
 
 What is sent to the API: the system prompt, the doc text, and the list of component IDs (e.g. `cmd/api`, `internal/orders`, `ext:postgres`). No source code, file paths or import sites leave the machine.
+
+### Baseline (`archdrift.baseline.json`)
+
+A real repo usually has drift on day one. The baseline accepts known drift so that only new drift fails the check.
+
+1. `archdrift baseline --repo . --doc docs/design.md` writes every current failing finding to `archdrift.baseline.json`. New entries get the reason `TODO: explain why this drift is accepted` and expire in 90 days. Re-running keeps the reason and expiry of entries that still match.
+2. Replace each TODO with the real reason (for example a ticket), adjust `expires`, and commit.
+
+```json
+{
+  "version": 1,
+  "accepted": [
+    {"id": "FORBIDDEN_EDGE:API Gateway -> Store", "reason": "Legacy path, removal tracked in ARCH-42", "expires": "2027-01-31"}
+  ]
+}
+```
+
+On `check`:
+
+- An accepted finding does not fail the check. It moves to an "Accepted drift (baseline)" table in the report with its reason, expiry and evidence, and is counted as `accepted` (not in `by_type`).
+- An entry is valid through its `expires` date (optional; omit it for no expiry). After that the finding fails again and the report says so.
+- The report also notes entries that no longer match any finding (remove them) and entries still holding the TODO reason.
+- `id` is the finding's `id` from `report.json`. A missing explicit `--baseline` is an error, so a typo cannot silently fail every accepted finding.
 
 ### Configuration (`archdrift.json`)
 

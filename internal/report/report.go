@@ -63,6 +63,7 @@ type Summary struct {
 	Failing  int            `json:"failing"`
 	ByType   map[string]int `json:"by_type"`
 	Dropped  int            `json:"dropped_claims"`
+	Accepted int            `json:"accepted"` // findings accepted by the baseline (not counted in by_type)
 	ExitCode int            `json:"exit_code"`
 }
 
@@ -83,6 +84,7 @@ type Report struct {
 	Undoc    []string           `json:"undocumented_nodes"`
 	Lock     string             `json:"lock,omitempty"`
 	Config   string             `json:"config,omitempty"`
+	Baseline string             `json:"baseline,omitempty"`
 	Notes    []string           `json:"notes"`
 }
 
@@ -97,6 +99,7 @@ type Input struct {
 	Lock                      string   // lock file path when the doc model came from a lock
 	Notes                     []string // warnings shown at the top of the report
 	Config                    string   // config file path, when one was used
+	Baseline                  string   // baseline file path, when one was used
 }
 
 // Build assembles the report.
@@ -106,6 +109,10 @@ func Build(in Input) *Report {
 		s.ByType[t] = 0
 	}
 	for _, f := range in.Result.Findings {
+		if f.Accepted != nil {
+			s.Accepted++
+			continue
+		}
 		s.ByType[f.Type]++
 		if f.Failing {
 			s.Failing++
@@ -147,7 +154,7 @@ func Build(in Input) *Report {
 		Summary: s, Findings: in.Result.Findings, Dropped: dropped, Usage: u,
 		Code: in.Code, DocModel: in.DocModel, Graph: in.Result.Graph,
 		Missing: in.Result.MissingNodes, Undoc: in.Result.UndocumentedNodes,
-		Lock: in.Lock, Notes: notes, Config: in.Config,
+		Lock: in.Lock, Notes: notes, Config: in.Config, Baseline: in.Baseline,
 	}
 }
 
@@ -195,6 +202,9 @@ func Markdown(r *Report) string {
 	if r.Config != "" {
 		fmt.Fprintf(&b, "- **Config:** `%s`\n", r.Config)
 	}
+	if r.Baseline != "" {
+		fmt.Fprintf(&b, "- **Baseline:** `%s` (%d accepted)\n", r.Baseline, r.Summary.Accepted)
+	}
 	fmt.Fprintf(&b, "- **Code components:** %d, **import edges:** %d\n\n", len(r.Code.Components), len(r.Code.Edges))
 
 	if len(r.Notes) > 0 {
@@ -217,13 +227,25 @@ func Markdown(r *Report) string {
 	for _, row := range rows {
 		fmt.Fprintf(&b, "| %s | %s | %s | %d |\n", row.t, row.sev, row.fail, r.Summary.ByType[row.t])
 	}
-	fmt.Fprintf(&b, "\nDropped doc claims: %d\n\n", r.Summary.Dropped)
+	fmt.Fprintf(&b, "\nDropped doc claims: %d\n", r.Summary.Dropped)
+	if r.Summary.Accepted > 0 {
+		fmt.Fprintf(&b, "\nAccepted by baseline (not counted above): %d\n", r.Summary.Accepted)
+	}
+	b.WriteString("\n")
 
 	b.WriteString("## Findings\n\n")
-	if len(r.Findings) == 0 {
+	var active, accepted []drift.Finding
+	for _, f := range r.Findings {
+		if f.Accepted != nil {
+			accepted = append(accepted, f)
+		} else {
+			active = append(active, f)
+		}
+	}
+	if len(active) == 0 {
 		b.WriteString("No findings.\n\n")
 	}
-	for i, f := range r.Findings {
+	for i, f := range active {
 		fmt.Fprintf(&b, "### %d. %s (%s): %s\n\n", i+1, f.Type, f.Severity, f.Subject)
 		b.WriteString(f.Message + "\n\n")
 		if f.From != "" || f.To != "" {
@@ -253,6 +275,22 @@ func Markdown(r *Report) string {
 			quoteBlock(&b, f.DocQuote)
 		} else {
 			b.WriteString("- Doc quote: none (the doc is silent)\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if len(accepted) > 0 {
+		b.WriteString("## Accepted drift (baseline)\n\nKnown drift accepted in the baseline. It does not fail the check until it expires.\n\n| Finding | Reason | Expires | Code evidence |\n|---|---|---|---|\n")
+		for _, f := range accepted {
+			ev := make([]string, len(f.Code))
+			for i, l := range f.Code {
+				ev[i] = "`" + l.String() + "`"
+			}
+			exp := f.Accepted.Expires
+			if exp == "" {
+				exp = "never"
+			}
+			fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", mdEscape(f.ID), mdEscape(f.Accepted.Reason), exp, strings.Join(ev, ", "))
 		}
 		b.WriteString("\n")
 	}

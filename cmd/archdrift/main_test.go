@@ -416,3 +416,38 @@ func TestConfigAutoDetected(t *testing.T) {
 		t.Errorf("bad config: exit %d", code)
 	}
 }
+
+func TestBaselineWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	bl := filepath.Join(dir, "baseline.json")
+	base := []string{"--repo", fixtureRepo, "--doc", fixtureDoc, "--baseline", bl, "--today", "2026-11-02", "--out", filepath.Join(dir, "out")}
+	var so, se bytes.Buffer
+
+	// A check with an explicit baseline that does not exist is an error (typo protection).
+	if code := run(context.Background(), append([]string{"check"}, base...), &so, &se, nil); code != 2 {
+		t.Fatalf("missing explicit baseline: exit %d", code)
+	}
+	if code := run(context.Background(), append([]string{"baseline"}, base...), &so, &se, nil); code != 0 {
+		t.Fatalf("baseline: exit %d: %s", code, se.String())
+	}
+	if !strings.Contains(so.String(), "5 accepted finding(s) (0 kept, 5 new)") {
+		t.Errorf("baseline output: %s", so.String())
+	}
+	// Everything accepted: check passes, reports the TODO reasons, and lists accepted drift.
+	so.Reset()
+	if code := run(context.Background(), append([]string{"check"}, base...), &so, &se, nil); code != 0 {
+		t.Fatalf("check with full baseline: exit %d: %s", code, so.String())
+	}
+	md, _ := os.ReadFile(filepath.Join(dir, "out", "report.md"))
+	for _, s := range []string{"## Accepted drift (baseline)", "Accepted by baseline (not counted above): 5", "has no real reason yet", "### 1. UNVERIFIABLE (info): Worker -> API Gateway"} {
+		if !bytes.Contains(md, []byte(s)) {
+			t.Errorf("report missing %q", s)
+		}
+	}
+	// Past the 90-day expiry, everything fails again.
+	late := append([]string{"check"}, base...)
+	late[len(late)-3] = "2027-02-01"
+	if code := run(context.Background(), late, &so, &se, nil); code != 1 {
+		t.Fatalf("after expiry: exit %d", code)
+	}
+}

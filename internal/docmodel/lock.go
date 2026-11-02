@@ -1,6 +1,7 @@
 package docmodel
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -71,8 +72,11 @@ func LoadLock(p string) (*Lock, error) {
 
 // WriteLock writes a lock as stable, indented JSON.
 func WriteLock(p string, l *Lock) error {
-	b, err := json.MarshalIndent(l, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false) // keep quotes like "A -> B" readable in a file people edit
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(l); err != nil {
 		return err
 	}
 	if dir := filepath.Dir(p); dir != "" {
@@ -80,7 +84,7 @@ func WriteLock(p string, l *Lock) error {
 			return err
 		}
 	}
-	return os.WriteFile(p, append(b, '\n'), 0o644)
+	return os.WriteFile(p, buf.Bytes(), 0o644)
 }
 
 // LockExtractor serves the doc model from a lock.

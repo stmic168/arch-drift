@@ -44,7 +44,8 @@ type Finding struct {
 	Code     []codemodel.Location `json:"code_evidence"`       // file:line from code
 	DocQuote string               `json:"doc_quote,omitempty"` // verbatim from doc
 	Protocol string               `json:"protocol,omitempty"`
-	Via      []string             `json:"via,omitempty"` // component path when proven transitively
+	Via      []string             `json:"via,omitempty"`      // component path when proven transitively
+	Accepted *Accepted            `json:"accepted,omitempty"` // set when the baseline accepts this finding
 }
 
 // Options tune the diff.
