@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/stmic168/arch-drift/internal/codemodel"
+	"github.com/stmic168/arch-drift/internal/config"
 	"github.com/stmic168/arch-drift/internal/docmodel"
 	"github.com/stmic168/arch-drift/internal/drift"
 	"github.com/stmic168/arch-drift/internal/report"
@@ -28,8 +29,8 @@ const (
 )
 
 const usage = `usage:
-  archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock]
-  archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>]
+  archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock] [--config <json>]
+  archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--config <json>]
 
 check  compares code with the doc and writes <out>/report.md and report.json.
 lock   extracts the doc model once and writes a lock file to review and commit.
@@ -42,13 +43,19 @@ lock   extracts the doc model once and writes a lock file to review and commit.
   --doc-model  use a recorded doc model JSON instead of the API (ignores any lock)
   --lock       lock file path (default: next to the doc, design.md -> design.lock.json)
   --no-lock    check only: ignore the lock and extract from the doc
+  --config     config file (default: archdrift.json at the repo root, if present)
 
 Exit codes: check 0 no drift, 1 drift, 2 error; lock 0 written, 2 error.
 `
 
 type options struct {
-	repo, doc, out, model, docModel, lock string
-	noLock                                bool
+	repo, doc, out, model, docModel, lock, config string
+	noLock                                        bool
+
+	// resolved from the config file
+	configPath string
+	scan       codemodel.Options
+	diff       drift.Options
 }
 
 func main() {
@@ -73,6 +80,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 	fs.StringVar(&o.model, "model", docmodel.DefaultModel, "")
 	fs.StringVar(&o.docModel, "doc-model", "", "")
 	fs.StringVar(&o.lock, "lock", "", "")
+	fs.StringVar(&o.config, "config", "", "")
 	if cmd == "check" {
 		fs.BoolVar(&o.noLock, "no-lock", false, "")
 	}
@@ -81,6 +89,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 	}
 	if o.repo == "" || o.doc == "" || fs.NArg() > 0 || (o.noLock && o.lock != "") {
 		fs.Usage()
+		return exitError
+	}
+	if err := resolveConfig(&o); err != nil {
+		fmt.Fprintf(stderr, "archdrift: %v\n", err)
 		return exitError
 	}
 	apiExtractor := func() docmodel.Extractor {
@@ -98,6 +110,25 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 	return runCheck(ctx, o, apiExtractor, stdout, stderr)
 }
 
+// resolveConfig loads --config, or archdrift.json at the repo root when present.
+func resolveConfig(o *options) error {
+	p := o.config
+	if p == "" {
+		p = filepath.Join(o.repo, config.FileName)
+	}
+	c, err := config.Load(p)
+	switch {
+	case err == nil:
+		o.configPath = filepath.ToSlash(filepath.Clean(p))
+		o.scan, o.diff = c.ScanOptions(), c.DiffOptions()
+		return nil
+	case errors.Is(err, fs.ErrNotExist) && o.config == "":
+		return nil
+	default:
+		return fmt.Errorf("config: %w", err)
+	}
+}
+
 // inputs holds what every command reads first.
 type inputs struct {
 	doc  string
@@ -112,7 +143,7 @@ func load(o options) (*inputs, error) {
 	if len(b) == 0 {
 		return nil, errors.New("design doc is empty")
 	}
-	code, err := codemodel.Scan(o.repo)
+	code, err := codemodel.Scan(o.repo, o.scan)
 	if err != nil {
 		return nil, fmt.Errorf("scan repo: %w", err)
 	}
@@ -178,11 +209,11 @@ func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extra
 	}
 	ids := in.code.IDs()
 	verified, dropped := docmodel.Verify(raw, in.doc, ids)
-	res := drift.Diff(in.code, verified)
+	res := drift.Diff(in.code, verified, o.diff)
 	rep := report.Build(report.Input{
 		Repo: filepath.ToSlash(filepath.Clean(o.repo)), Doc: filepath.ToSlash(filepath.Clean(o.doc)),
 		RequestedModel: o.model, Code: in.code, DocModel: verified, Dropped: dropped, Result: res, Usage: usage,
-		Lock: lockPath, Notes: notes,
+		Lock: lockPath, Notes: notes, Config: o.configPath,
 	})
 	if err := report.Write(o.out, rep); err != nil {
 		return fail(fmt.Errorf("write report: %w", err))

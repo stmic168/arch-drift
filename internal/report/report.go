@@ -82,6 +82,7 @@ type Report struct {
 	Missing  []string           `json:"missing_nodes"`
 	Undoc    []string           `json:"undocumented_nodes"`
 	Lock     string             `json:"lock,omitempty"`
+	Config   string             `json:"config,omitempty"`
 	Notes    []string           `json:"notes"`
 }
 
@@ -95,6 +96,7 @@ type Input struct {
 	Usage                     docmodel.Usage
 	Lock                      string   // lock file path when the doc model came from a lock
 	Notes                     []string // warnings shown at the top of the report
+	Config                    string   // config file path, when one was used
 }
 
 // Build assembles the report.
@@ -145,7 +147,7 @@ func Build(in Input) *Report {
 		Summary: s, Findings: in.Result.Findings, Dropped: dropped, Usage: u,
 		Code: in.Code, DocModel: in.DocModel, Graph: in.Result.Graph,
 		Missing: in.Result.MissingNodes, Undoc: in.Result.UndocumentedNodes,
-		Lock: in.Lock, Notes: notes,
+		Lock: in.Lock, Notes: notes, Config: in.Config,
 	}
 }
 
@@ -189,6 +191,9 @@ func Markdown(r *Report) string {
 		fmt.Fprintf(&b, "- **Doc model source:** %s (`%s`)\n", r.Usage.Source, r.Lock)
 	} else {
 		fmt.Fprintf(&b, "- **Doc model source:** %s\n", r.Usage.Source)
+	}
+	if r.Config != "" {
+		fmt.Fprintf(&b, "- **Config:** `%s`\n", r.Config)
 	}
 	fmt.Fprintf(&b, "- **Code components:** %d, **import edges:** %d\n\n", len(r.Code.Components), len(r.Code.Edges))
 

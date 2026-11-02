@@ -362,3 +362,57 @@ func TestLockNotesWhenCodeChanged(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigAutoDetected(t *testing.T) {
+	dir := t.TempDir()
+	write := func(p, s string) {
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, p)), 0o755)
+		os.WriteFile(filepath.Join(dir, p), []byte(s), 0o644)
+	}
+	write("go.mod", "module example.com/mono\n")
+	write("services/billing/main.go", "package main\n\nimport _ \"example.com/mono/libs/ledger\"\n\nfunc main() {}\n")
+	write("libs/ledger/ledger.go", "package ledger\n\nimport _ \"example.com/mono/libs/db\"\n")
+	write("libs/db/db.go", "package db\n\nimport _ \"github.com/lib/pq\"\n")
+	write("archdrift.json", `{"components":[{"id":"billing","paths":["services/billing"]},{"id":"ledger","paths":["libs/ledger"]},{"id":"db","paths":["libs/db"]}],
+"default_layout":false,"transitive":{"required":true}}`)
+	write("design.md", "Billing records every charge in Postgres.\nBilling is the payments service.\nLedger keeps balances.\nDB wraps the driver.\nPostgres stores data.\n")
+	write("dm.json", `{"components":[
+ {"name":"Billing","code_ids":["billing"],"quote":"Billing is the payments service."},
+ {"name":"Ledger","code_ids":["ledger"],"quote":"Ledger keeps balances."},
+ {"name":"DB","code_ids":["db"],"quote":"DB wraps the driver."},
+ {"name":"Postgres","code_ids":["ext:postgres"],"quote":"Postgres stores data."}],
+"relations":[{"from":"Billing","to":"Postgres","kind":"required","protocol":"SQL","quote":"Billing records every charge in Postgres."}]}`)
+	out := filepath.Join(dir, "out")
+	var so, se bytes.Buffer
+	run(context.Background(), []string{"check", "--repo", dir, "--doc", filepath.Join(dir, "design.md"), "--doc-model", filepath.Join(dir, "dm.json"), "--out", out}, &so, &se, nil)
+	b, err := os.ReadFile(filepath.Join(out, "report.json"))
+	if err != nil {
+		t.Fatalf("%v: %s", err, se.String())
+	}
+	var r struct {
+		Config   string `json:"config"`
+		Findings []struct {
+			Type, Subject string
+		} `json:"findings"`
+	}
+	json.Unmarshal(b, &r)
+	if !strings.HasSuffix(r.Config, "archdrift.json") {
+		t.Errorf("config not recorded: %q", r.Config)
+	}
+	// Billing -> Postgres holds only through ledger -> db -> pq (transitive.required),
+	// so it must not be MISSING_EDGE; the hops themselves are undocumented.
+	var types []string
+	for _, f := range r.Findings {
+		types = append(types, f.Type+" "+f.Subject)
+	}
+	want := []string{"UNDOCUMENTED_EDGE Billing -> Ledger", "UNDOCUMENTED_EDGE DB -> Postgres", "UNDOCUMENTED_EDGE Ledger -> DB"}
+	if !reflect.DeepEqual(types, want) {
+		t.Errorf("findings = %v, want %v", types, want)
+	}
+
+	// A broken config is an error, not a silent default.
+	write("archdrift.json", `{"components":[{"id":"ext:bad","paths":["x"]}]}`)
+	if code := run(context.Background(), []string{"check", "--repo", dir, "--doc", filepath.Join(dir, "design.md"), "--doc-model", filepath.Join(dir, "dm.json"), "--out", out}, &so, &se, nil); code != 2 {
+		t.Errorf("bad config: exit %d", code)
+	}
+}

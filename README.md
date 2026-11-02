@@ -37,6 +37,7 @@ go build -o archdrift ./cmd/archdrift
 | `--doc-model` | | load a recorded doc model JSON and skip the API (ignores any lock) |
 | `--lock` | next to the doc (`design.md` -> `design.lock.json`) | lock file to read (`check`) or write (`lock`) |
 | `--no-lock` | | `check` only: ignore the lock and extract from the doc |
+| `--config` | `archdrift.json` at the repo root, if present | per-repo configuration (below) |
 
 Exit codes: `check` returns `0` no drift, `1` drift, `2` error; `lock` returns `0` written, `2` error. `UNVERIFIABLE` findings never fail the check.
 
@@ -70,9 +71,39 @@ report: /tmp/shop-report/report.md
 
 What is sent to the API: the system prompt, the doc text, and the list of component IDs (e.g. `cmd/api`, `internal/orders`, `ext:postgres`). No source code, file paths or import sites leave the machine.
 
+### Configuration (`archdrift.json`)
+
+Optional, at the repo root (or `--config`). JSON rather than YAML because the stdlib has no YAML parser and the Anthropic SDK stays the only dependency. Unknown fields and invalid values are errors.
+
+```json
+{
+  "components": [
+    {"id": "billing", "paths": ["services/billing"]},
+    {"id": "ledger",  "paths": ["libs/ledger", "libs/ledgerutil"]}
+  ],
+  "external": [
+    {"id": "ext:s3", "prefixes": ["github.com/aws/aws-sdk-go-v2/service/s3"]}
+  ],
+  "exclude": ["gen", "tools"],
+  "default_layout": true,
+  "transitive": {"required": true, "forbidden": false}
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `components` | Map directories to component IDs. A path matches itself and everything below it; the longest matching path wins. Use this for monorepos and layouts other than `cmd/` / `internal/` / `pkg/`. |
+| `external` | Extra `ext:*` IDs by import-path prefix, checked before the built-in catalog (e.g. internal clients, S3, Elasticsearch). |
+| `exclude` | Directories to skip entirely (generated code, tools). |
+| `default_layout` | Keep the `cmd/x`, `internal/x`, `pkg/x` rule for directories no configured component matches. Default `true`; set `false` to model only configured components. |
+| `transitive.required` | A required relation is also satisfied by an import path through other components (e.g. `api -> store -> ext:postgres` satisfies "API uses Postgres"). Each hop still needs its own doc relation, or it shows as `UNDOCUMENTED_EDGE`. |
+| `transitive.forbidden` | A forbidden relation is also violated by an indirect path. The finding lists the path and the `file:line` of each hop. |
+
+A component is a deployable (separately run program) when it contains a `main` package, whatever its directory. Deployables drive the `UNVERIFIABLE` rule.
+
 ## Pipeline
 
-1. **Code model** (`internal/codemodel`). Parses every `.go` file with `go/parser` (imports only), skipping `_test.go`, `vendor/`, `testdata/` and hidden dirs below the root. Components are `cmd/x`, `internal/x`, `pkg/x`; subpackages roll up (`internal/orders/repo` belongs to `internal/orders`). Edges are imports of the module's own packages, with every `file:line`. External drivers map to catalog IDs:
+1. **Code model** (`internal/codemodel`). Parses every `.go` file with `go/parser` (imports only), skipping `_test.go`, `vendor/`, `testdata/`, hidden dirs and configured `exclude` dirs below the root. Components are configured `components`, then `cmd/x`, `internal/x`, `pkg/x`; subpackages roll up (`internal/orders/repo` belongs to `internal/orders`). Edges are imports of the module's own packages, with every `file:line`. External drivers map to catalog IDs:
 
    | Import prefix | ID |
    |---|---|
@@ -96,9 +127,9 @@ What is sent to the API: the system prompt, the doc text, and the list of compon
    | `MISSING_EDGE` | medium | yes | doc requires A to depend on B, the relation can be checked by static import, and there is no direct import |
    | `UNDOCUMENTED_EDGE` | low | yes | direct import between two documented components (in different doc components) that no doc relation covers |
    | `UNDOCUMENTED_COMPONENT` | low | yes | code component that no doc component maps to |
-   | `UNVERIFIABLE` | info | no | required relation that imports cannot prove: target is a `cmd/*` deployable (a main package cannot be imported), or the protocol is a runtime transport (HTTP, gRPC, Kafka, queue, ...) and one side is a deployable |
+   | `UNVERIFIABLE` | info | no | required relation that imports cannot prove: target is a deployable (a main package cannot be imported), or the protocol is a runtime transport (HTTP, gRPC, Kafka, queue, ...) and one side is a deployable |
 
-   Relations to `ext:*` are always checkable (the driver import is the evidence). Edges are direct imports only; transitive paths do not satisfy or violate a relation. Edges touching an undocumented component are not reported again as `UNDOCUMENTED_EDGE`.
+   Relations to `ext:*` are always checkable (the driver import is the evidence). By default only direct imports count; `transitive` in the config extends that to import paths. Edges touching an undocumented component are not reported again as `UNDOCUMENTED_EDGE`.
 5. **Report** (`internal/report`): `report.md` (findings with evidence, coloured Mermaid diagram, dropped claims, token usage and estimated cost) and `report.json`. Output has no timestamps and is byte-identical across runs on the same inputs.
 
 ## Layout
@@ -131,4 +162,4 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 
 - The doc model comes from an LLM and can differ between uncached runs; the cache makes repeated runs on the same doc stable.
 - Cost is an estimate from list prices (cache writes 1.25x input, cache reads 0.1x input). With a server-side fallback, it is priced at the serving model's rate.
-- Packages outside `cmd/`, `internal/`, `pkg/` are ignored.
+- Without a config, packages outside `cmd/`, `internal/`, `pkg/` are ignored.
