@@ -56,6 +56,13 @@ jobs:
           test "$code" -ne 2
           jq -e '.usage.source == "cache"' live/report.json
 
+      - name: Show doc model, dropped claims and usage
+        if: always()
+        run: |
+          if [ -f live/report-run1.json ]; then
+            jq '{usage, summary, doc_model, dropped_claims}' live/report-run1.json
+          fi
+
       - name: Compare with expected findings (warning only)
         run: |
           got=$(jq -r '[.findings[] | .type + " " + .subject] | sort | .[]' live/report-run1.json)

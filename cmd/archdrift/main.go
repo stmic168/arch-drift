@@ -115,6 +115,9 @@ func check(ctx context.Context, repo, docPath, model string, ext docmodel.Extrac
 	if err != nil {
 		return nil, fmt.Errorf("extract doc model: %w", err)
 	}
+	if len(raw.Components) == 0 {
+		return nil, fmt.Errorf("doc model has no components (source %s); extraction failed or the doc describes no architecture", usage.Source)
+	}
 	if usage.Model == "" && usage.Source != "recorded" {
 		usage.Model = model
 	}
