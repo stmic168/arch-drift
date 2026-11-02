@@ -63,15 +63,22 @@ jobs:
             jq '{usage, summary, doc_model, dropped_claims}' live/report-run1.json
           fi
 
-      - name: Compare with expected findings (warning only)
+      - name: Compare with expected findings
         run: |
-          got=$(jq -r '[.findings[] | .type + " " + .subject] | sort | .[]' live/report-run1.json)
-          want=$(jq -r '[.findings[] | .type + " " + .subject] | sort | .[]' testdata/shop/expected.json)
-          if [ "$got" = "$want" ]; then
-            echo "Live findings match testdata/shop/expected.json"
-          else
-            echo "::warning::Live findings differ from testdata/shop/expected.json (the LLM may name components differently)"
+          # Failing findings must match exactly. UNVERIFIABLE never fails the check and
+          # depends on how the model reads runtime relations, so a difference there is a notice.
+          got=$(jq -r '[.findings[] | select(.type != "UNVERIFIABLE") | .type + " " + .subject] | sort | .[]' live/report-run1.json)
+          want=$(jq -r '[.findings[] | select(.type != "UNVERIFIABLE") | .type + " " + .subject] | sort | .[]' testdata/shop/expected.json)
+          if [ "$got" != "$want" ]; then
+            echo "::error::Failing findings differ from testdata/shop/expected.json"
             diff <(echo "$want") <(echo "$got") || true
+            exit 1
+          fi
+          echo "Failing findings match testdata/shop/expected.json"
+          gotu=$(jq -r '[.findings[] | select(.type == "UNVERIFIABLE") | .subject] | sort | .[]' live/report-run1.json)
+          wantu=$(jq -r '[.findings[] | select(.type == "UNVERIFIABLE") | .subject] | sort | .[]' testdata/shop/expected.json)
+          if [ "$gotu" != "$wantu" ]; then
+            echo "::notice::UNVERIFIABLE findings differ (non-failing): expected [$wantu], got [$gotu]"
           fi
 
       - name: Job summary
