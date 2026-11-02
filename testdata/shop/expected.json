@@ -1,0 +1,16 @@
+{
+  "exit_code": 1,
+  "findings": [
+    {"type": "FORBIDDEN_EDGE", "subject": "API Gateway -> Store", "code_evidence": ["cmd/api/main.go:10"]},
+    {"type": "MISSING_COMPONENT", "subject": "Notifier", "code_evidence": []},
+    {"type": "MISSING_EDGE", "subject": "Catalog -> Store", "code_evidence": []},
+    {"type": "UNDOCUMENTED_COMPONENT", "subject": "pkg/metrics", "code_evidence": ["pkg/metrics/metrics.go:2"]},
+    {"type": "UNDOCUMENTED_EDGE", "subject": "Orders -> PostgreSQL", "code_evidence": ["internal/orders/repo/repo.go:5"]},
+    {"type": "UNVERIFIABLE", "subject": "API Gateway -> Worker", "code_evidence": []}
+  ],
+  "dropped_claims": [
+    {"claim": "code_id", "name": "Orders", "detail": "internal/legacyorders"},
+    {"claim": "component", "name": "Billing"},
+    {"claim": "relation", "name": "Orders -> Store", "detail": "forbidden"}
+  ]
+}

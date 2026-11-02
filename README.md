@@ -1,0 +1,116 @@
+# archdrift
+
+`archdrift` compares a Go repository with a Markdown design doc and reports architecture drift. Every finding carries evidence: `file:line` from the code and/or a verbatim quote from the doc.
+
+**Core principle:** the LLM only reads the doc and maps the doc's names onto code IDs. Code facts (components, imports) and every drift conclusion come from deterministic Go code. Only the doc text and the list of component IDs go to the API, never source code.
+
+## Status
+
+| Path | State |
+|---|---|
+| Offline (`--doc-model`) | working, covered by the golden end-to-end test |
+| Live API (`AnthropicExtractor`) | **not yet run against the real API**; request shape and response decoding are unit-tested offline. Without credentials it fails cleanly with exit 2. |
+
+## Requirements
+
+- Go 1.25+ (required by `github.com/anthropics/anthropic-sdk-go/v2`; with an older Go installed, the toolchain is downloaded automatically)
+- For the live path: Anthropic credentials (`ANTHROPIC_API_KEY`, or any source the SDK resolves, e.g. `ant auth login`)
+- The only external dependency is the official `anthropic-sdk-go`; parsing uses the stdlib `go/parser`
+
+## Usage
+
+```bash
+go build -o archdrift ./cmd/archdrift
+```
+
+```bash
+./archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>]
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--repo` | required | Go repo root (must contain `go.mod`) |
+| `--doc` | required | Markdown design doc (Mermaid blocks are fine) |
+| `--out` | `archdrift-out` | output dir: `report.md`, `report.json`, `cache/` |
+| `--model` | `claude-sonnet-5-5` | Claude model used for doc extraction |
+| `--doc-model` | | load a recorded doc model JSON and skip the API |
+
+Exit codes: `0` no drift, `1` drift, `2` error. `UNVERIFIABLE` findings never fail the check.
+
+Offline demo on the fixture:
+
+```bash
+./archdrift check --repo testdata/shop --doc testdata/shop/design.md --doc-model testdata/shop/docmodel.json --out /tmp/shop-report
+```
+
+Output on the fixture:
+
+```
+archdrift: drift detected: 5 failing finding(s), 1 unverifiable, 3 dropped claim(s)
+report: /tmp/shop-report/report.md
+```
+
+What is sent to the API: the system prompt, the doc text, and the list of component IDs (e.g. `cmd/api`, `internal/orders`, `ext:postgres`). No source code, file paths or import sites leave the machine.
+
+## Pipeline
+
+1. **Code model** (`internal/codemodel`). Parses every `.go` file with `go/parser` (imports only), skipping `_test.go`, `vendor/`, `testdata/` and hidden dirs below the root. Components are `cmd/x`, `internal/x`, `pkg/x`; subpackages roll up (`internal/orders/repo` belongs to `internal/orders`). Edges are imports of the module's own packages, with every `file:line`. External drivers map to catalog IDs:
+
+   | Import prefix | ID |
+   |---|---|
+   | `github.com/jackc/pgx`, `github.com/lib/pq` | `ext:postgres` |
+   | `github.com/redis/go-redis`, `github.com/go-redis/redis` | `ext:redis` |
+   | `go.mongodb.org/mongo-driver` | `ext:mongodb` |
+   | `github.com/segmentio/kafka-go`, `github.com/IBM/sarama`, `github.com/Shopify/sarama` | `ext:kafka` |
+   | `google.golang.org/grpc` | `ext:grpc` |
+
+2. **Doc model** (`internal/docmodel`). One Messages API call with structured output (`output_config.format`, JSON schema). Input: the doc (wrapped in `<design_doc>` tags and treated as untrusted data by the system prompt) plus the ID list. Output: `components[]` (`name`, `code_ids[]`, `quote`) and `relations[]` (`from`, `to`, `kind` = `required|forbidden`, `protocol`, `quote`). The LLM sits behind the `Extractor` interface; implementations are the live `AnthropicExtractor`, `FileExtractor` (`--doc-model`) and `CachedExtractor`.
+   - Cache: `<out>/cache/<sha256(model, IDs, doc)>.json`. A hit costs nothing and is reported as source `cache`.
+   - `stop_reason: refusal` and `max_tokens` are errors (exit 2) with the refusal category in the message.
+   - Fallbacks: the Go SDK (`anthropic-sdk-go/v2` v2.4.0) has `BetaFallbacksParamUnion.OfDefault`, so requests send `fallbacks: "default"` with beta header `server-side-fallback-2026-07-01`. A refused request is re-served server-side by the model Anthropic recommends for the refusal category; the decoder reads the text after the last `fallback` block. This works on the first-party Claude API only (not Bedrock, Vertex or Foundry).
+3. **Verifier**. A claim's quote must appear in the doc after whitespace normalization, or the claim is dropped. Unknown `code_ids` are dropped. Relations pointing at a dropped component, with an invalid kind, or with a fake quote are dropped. Every dropped claim is listed in the report.
+4. **Diff** (`internal/drift`):
+
+   | Type | Severity | Fails | Rule |
+   |---|---|---|---|
+   | `FORBIDDEN_EDGE` | high | yes | doc says A must not depend on B, and code has a direct import A to B |
+   | `MISSING_COMPONENT` | medium | yes | doc component maps to no code ID |
+   | `MISSING_EDGE` | medium | yes | doc requires A to depend on B, the relation can be checked by static import, and there is no direct import |
+   | `UNDOCUMENTED_EDGE` | low | yes | direct import between two documented components (in different doc components) that no doc relation covers |
+   | `UNDOCUMENTED_COMPONENT` | low | yes | code component that no doc component maps to |
+   | `UNVERIFIABLE` | info | no | required relation that imports cannot prove: target is a `cmd/*` deployable (a main package cannot be imported), or the protocol is a runtime transport (HTTP, gRPC, Kafka, queue, ...) and one side is a deployable |
+
+   Relations to `ext:*` are always checkable (the driver import is the evidence). Edges are direct imports only; transitive paths do not satisfy or violate a relation. Edges touching an undocumented component are not reported again as `UNDOCUMENTED_EDGE`.
+5. **Report** (`internal/report`): `report.md` (findings with evidence, coloured Mermaid diagram, dropped claims, token usage and estimated cost) and `report.json`. Output has no timestamps and is byte-identical across runs on the same inputs.
+
+## Layout
+
+```
+cmd/archdrift/main.go       CLI
+internal/codemodel          scanner
+internal/docmodel           Extractor interface, Anthropic client, cache, verifier
+internal/drift              deterministic diff
+internal/report             Markdown, Mermaid, JSON
+testdata/shop/              fixture: Go repo, design.md, recorded docmodel.json, expected.json
+```
+
+The fixture plants one finding of each type (see the `planted` comments in its code) plus three bad claims in `docmodel.json` (a fake quote, an unknown code ID, a fake `forbidden` relation that would otherwise create a false `FORBIDDEN_EDGE`). It also contains a `_test.go`, a `testdata/` dir, a `vendor/` dir and a prompt-injection comment in the doc to exercise the skips.
+
+## Tests
+
+```bash
+go vet ./... && go test ./...
+```
+
+Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, a table test of all six finding types, the request shape (structured output, `fallbacks: "default"`, only doc + IDs sent), refusal/max_tokens/fallback decoding, the cache, byte-identical output across two runs, and a golden end-to-end run with `--doc-model` that must produce exactly `expected.json` and exit 1.
+
+## CI
+
+- `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: `go vet`, `go test`, and an offline fixture run that must exit 1.
+- `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture, so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), warns if the live findings differ from `expected.json`, puts `report.md` in the job summary, and uploads the reports as an artifact. GitHub only shows **Run workflow** once the workflow file is on the default branch.
+
+## Limitations
+
+- The live API path has not been run against the real API yet (no credentials in the build environment). Its request shape and response decoding are unit-tested offline only.
+- Cost is an estimate from list prices (cache writes 1.25x input, cache reads 0.1x input). With a server-side fallback, it is priced at the serving model's rate.
+- Packages outside `cmd/`, `internal/`, `pkg/` are ignored.

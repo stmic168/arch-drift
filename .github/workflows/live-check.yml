@@ -1,0 +1,83 @@
+# Runs archdrift against the real Claude API on the testdata/shop fixture.
+# Manual only (it costs API tokens). Needs the repository secret ANTHROPIC_API_KEY.
+name: live-check
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Claude model for doc extraction
+        required: false
+        default: claude-sonnet-5-5
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      MODEL: ${{ inputs.model }}
+    steps:
+      - name: Check the secret is set
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Repository secret ANTHROPIC_API_KEY is not set (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build -o archdrift ./cmd/archdrift
+
+      - name: Run 1 (calls the API)
+        run: |
+          set +e
+          ./archdrift check --repo testdata/shop --doc testdata/shop/design.md --model "$MODEL" --out live
+          code=$?
+          set -e
+          echo "exit code: $code"
+          # 0 = no drift, 1 = drift (expected on the fixture), 2 = error
+          test "$code" -ne 2
+          cp live/report.md live/report-run1.md
+          cp live/report.json live/report-run1.json
+          jq -e '.usage.source == "api"' live/report.json
+
+      - name: Run 2 (must be served from cache)
+        run: |
+          set +e
+          ./archdrift check --repo testdata/shop --doc testdata/shop/design.md --model "$MODEL" --out live
+          code=$?
+          set -e
+          echo "exit code: $code"
+          test "$code" -ne 2
+          jq -e '.usage.source == "cache"' live/report.json
+
+      - name: Compare with expected findings (warning only)
+        run: |
+          got=$(jq -r '[.findings[] | .type + " " + .subject] | sort | .[]' live/report-run1.json)
+          want=$(jq -r '[.findings[] | .type + " " + .subject] | sort | .[]' testdata/shop/expected.json)
+          if [ "$got" = "$want" ]; then
+            echo "Live findings match testdata/shop/expected.json"
+          else
+            echo "::warning::Live findings differ from testdata/shop/expected.json (the LLM may name components differently)"
+            diff <(echo "$want") <(echo "$got") || true
+          fi
+
+      - name: Job summary
+        if: always()
+        run: |
+          if [ -f live/report-run1.md ]; then cat live/report-run1.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: archdrift-live-report
+          path: |
+            live/report-run1.md
+            live/report-run1.json
+            live/report.json
+          if-no-files-found: ignore
