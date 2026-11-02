@@ -4,6 +4,19 @@
 
 **Core principle:** the LLM only reads the doc and maps the doc's names onto code IDs. Code facts (components, imports) and every drift conclusion come from deterministic Go code. Only the doc text and the list of component IDs go to the API, never source code.
 
+## Status
+
+| Path | State |
+|---|---|
+| Offline (`--doc-model`) | working, covered by the golden end-to-end test |
+| Live API (`AnthropicExtractor`) | **not yet run against the real API**; request shape and response decoding are unit-tested offline. Without credentials it fails cleanly with exit 2. |
+
+## Requirements
+
+- Go 1.25+ (required by `github.com/anthropics/anthropic-sdk-go/v2`; with an older Go installed, the toolchain is downloaded automatically)
+- For the live path: Anthropic credentials (`ANTHROPIC_API_KEY`, or any source the SDK resolves, e.g. `ant auth login`)
+- The only external dependency is the official `anthropic-sdk-go`; parsing uses the stdlib `go/parser`
+
 ## Usage
 
 ```bash
@@ -24,13 +37,20 @@ go build -o archdrift ./cmd/archdrift
 
 Exit codes: `0` no drift, `1` drift, `2` error. `UNVERIFIABLE` findings never fail the check.
 
-The live path needs Anthropic credentials (`ANTHROPIC_API_KEY`, or any source the SDK resolves, e.g. `ant auth login`).
-
 Offline demo on the fixture:
 
 ```bash
 ./archdrift check --repo testdata/shop --doc testdata/shop/design.md --doc-model testdata/shop/docmodel.json --out /tmp/shop-report
 ```
+
+Output on the fixture:
+
+```
+archdrift: drift detected: 5 failing finding(s), 1 unverifiable, 3 dropped claim(s)
+report: /tmp/shop-report/report.md
+```
+
+What is sent to the API: the system prompt, the doc text, and the list of component IDs (e.g. `cmd/api`, `internal/orders`, `ext:postgres`). No source code, file paths or import sites leave the machine.
 
 ## Pipeline
 
