@@ -9,6 +9,7 @@ import (
 	"example.com/shop/internal/orders"
 	"example.com/shop/internal/store" // planted FORBIDDEN_EDGE: the API must not touch the store directly
 	"example.com/shop/pkg/metrics"
+	"github.com/segmentio/kafka-go"
 )
 
 func main() {
@@ -16,6 +17,8 @@ func main() {
 	o := orders.New(db)
 	c := catalog.New()
 	metrics.Register("api")
+	events := &kafka.Writer{Addr: kafka.TCP("localhost:9092"), Topic: "orders"} // order events for the Worker
+	defer events.Close()
 	http.HandleFunc("/orders", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, o.Count()) })
 	http.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, c.List()) })
 	_ = http.ListenAndServe(":8080", nil)
