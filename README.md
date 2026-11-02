@@ -104,6 +104,11 @@ go vet ./... && go test ./...
 
 Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, a table test of all six finding types, the request shape (structured output, `fallbacks: "default"`, only doc + IDs sent), refusal/max_tokens/fallback decoding, the cache, byte-identical output across two runs, and a golden end-to-end run with `--doc-model` that must produce exactly `expected.json` and exit 1.
 
+## CI
+
+- `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: `go vet`, `go test`, and an offline fixture run that must exit 1.
+- `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture, so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), warns if the live findings differ from `expected.json`, puts `report.md` in the job summary, and uploads the reports as an artifact. GitHub only shows **Run workflow** once the workflow file is on the default branch.
+
 ## Limitations
 
 - The live API path has not been run against the real API yet (no credentials in the build environment). Its request shape and response decoding are unit-tested offline only.
