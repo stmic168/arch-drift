@@ -17,7 +17,7 @@ func main() {
 	o := orders.New(db)
 	c := catalog.New()
 	metrics.Register("api")
-	events := &kafka.Writer{Addr: kafka.TCP("localhost:9092"), Topic: "orders"} // order events for the Worker
+	events := &kafka.Writer{Addr: kafka.TCP("localhost:9092"), Topic: "orders"} // order events, consumed by the Worker
 	defer events.Close()
 	http.HandleFunc("/orders", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, o.Count()) })
 	http.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, c.List()) })
