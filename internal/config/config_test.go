@@ -28,7 +28,8 @@ func TestLoadValid(t *testing.T) {
   "shared_protocol_packages": false,
   "default_layout": false,
   "transitive": {"required": true},
-  "undocumented_components": {"fail": true, "ignore": ["pkg/ext*"]}
+  "undocumented_components": {"fail": true, "ignore": ["pkg/ext*"]},
+  "undocumented_edges": {"fail": false}
 }`))
 	if err != nil {
 		t.Fatal(err)
@@ -44,13 +45,16 @@ func TestLoadValid(t *testing.T) {
 	if got := c.ScanOptions(); !reflect.DeepEqual(got, want) {
 		t.Errorf("ScanOptions = %+v", got)
 	}
-	if d := c.DiffOptions(); !d.TransitiveRequired || d.TransitiveForbidden || !d.FailUndocumentedComponents || len(d.IgnoreUndocumented) != 1 {
+	if d := c.DiffOptions(); !d.TransitiveRequired || d.TransitiveForbidden || !d.FailUndocumentedComponents || len(d.IgnoreUndocumented) != 1 || !d.ReportUndocumentedEdges {
 		t.Errorf("DiffOptions = %+v", d)
 	}
 	// Omitted default_layout keeps the default layout.
 	c, _ = Load(write(t, `{}`))
 	if c.ScanOptions().NoDefaultLayout {
 		t.Error("default_layout should default to true")
+	}
+	if c.DiffOptions().ReportUndocumentedEdges {
+		t.Error("undocumented_edges.fail should default to true")
 	}
 }
 

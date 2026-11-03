@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "doc_sha256": "ad9495fc887f302b50f289966f55266e6cab6883afd7d0e10081b2d6d0405f55",
+  "model": "claude-sonnet-5-5",
+  "code_ids": [
+    "chasm",
+    "clients",
+    "cmd/server",
+    "ext:cassandra",
+    "ext:elasticsearch",
+    "ext:grpc",
+    "ext:mysql",
+    "ext:postgres",
+    "ext:sqlite",
+    "ext:temporal-sdk",
+    "frontend",
+    "history",
+    "internal-worker",
+    "matching",
+    "membership",
+    "persistence",
+    "rpc",
+    "server",
+    "service-wiring"
+  ],
+  "doc_model": {
+    "components": [
+      {
+        "name": "Frontend Service",
+        "code_ids": [
+          "frontend"
+        ],
+        "quote": "Frontend Service"
+      },
+      {
+        "name": "History Service",
+        "code_ids": [
+          "history"
+        ],
+        "quote": "History Service shards manage individual [Workflow Executions]"
+      },
+      {
+        "name": "Internal Workers Service",
+        "code_ids": [
+          "internal-worker"
+        ],
+        "quote": "Internal Workers Service"
+      },
+      {
+        "name": "Matching Service",
+        "code_ids": [
+          "matching"
+        ],
+        "quote": "The Matching Service manages the [Task Queues]"
+      },
+      {
+        "name": "Temporal Worker",
+        "code_ids": [],
+        "quote": "hosts [Worker](https://docs.temporal.io/workers) processes, which execute their Workflow and Activity code",
+        "external": true
+      },
+      {
+        "name": "User Application",
+        "code_ids": [],
+        "quote": "The User Application uses one of the [Temporal SDKs]",
+        "external": true
+      }
+    ],
+    "relations": [
+      {
+        "from": "History Service",
+        "to": "Matching Service",
+        "kind": "required",
+        "protocol": "",
+        "quote": "drive the Workflow Execution to completion by enqueuing Workflow and Activity Tasks in the Matching Service"
+      },
+      {
+        "from": "Temporal Worker",
+        "to": "Frontend Service",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "they continuously poll the server for Workflow and Activity tasks, and on completion of each task they send information to the server."
+      },
+      {
+        "from": "Temporal Worker",
+        "to": "Matching Service",
+        "kind": "required",
+        "protocol": "",
+        "quote": "Temporal Workers poll the Task Queues in the Matching service for tasks."
+      },
+      {
+        "from": "User Application",
+        "to": "Frontend Service",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "The User Application uses one of the [Temporal SDKs](https://docs.temporal.io/dev-guide) as a gRPC client to communicate with the Temporal server to start/cancel workflows, and interact with running workflows."
+      }
+    ]
+  }
+}

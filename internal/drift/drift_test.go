@@ -80,6 +80,12 @@ func TestDiffFindingTypes(t *testing.T) {
 			wantType: UndocumentedEdge, wantSev: Low, wantFail: true, wantCode: "internal/a/x.go:4",
 		},
 		{
+			name:  "undocumented edge is informational when configured",
+			comps: base, edges: []codemodel.Edge{edge("internal/a", "internal/b", 4)}, docComps: baseDoc,
+			opts:     Options{ReportUndocumentedEdges: true},
+			wantType: UndocumentedEdge, wantSev: Info, wantFail: false, wantCode: "internal/a/x.go:4",
+		},
+		{
 			name:  "undocumented component is listed but does not fail by default",
 			comps: append(append([]codemodel.Component{}, base...), comp("pkg/metrics")), docComps: baseDoc,
 			wantType: UndocumentedComponent, wantSev: Info, wantFail: false, wantCode: "pkg/metrics/x.go:1",
@@ -184,12 +190,18 @@ func TestTransitive(t *testing.T) {
 	base := []docmodel.Relation{rel("API", "A", docmodel.KindRequired, ""), rel("A", "B", docmodel.KindRequired, ""), rel("B", "PG", docmodel.KindRequired, "")}
 	code := &codemodel.Model{Components: comps, Edges: edges}
 
-	// Required API -> PG: missing when only direct imports count, satisfied transitively.
+	// Required API -> PG: an external target is always reached through a
+	// client wrapper, so an import path satisfies it even by default.
 	req := &docmodel.Model{Components: docComps, Relations: append(append([]docmodel.Relation{}, base...), rel("API", "PG", docmodel.KindRequired, "SQL"))}
-	if res := Diff(code, req, Options{}); len(res.Findings) != 1 || res.Findings[0].Type != MissingEdge {
+	if res := Diff(code, req, Options{}); len(res.Findings) != 0 {
+		t.Fatalf("external target via path: %+v", res.Findings)
+	}
+	// Required API -> B (internal): missing when only direct imports count, satisfied transitively.
+	reqB := &docmodel.Model{Components: docComps, Relations: append(append([]docmodel.Relation{}, base...), rel("API", "B", docmodel.KindRequired, ""))}
+	if res := Diff(code, reqB, Options{}); len(res.Findings) != 1 || res.Findings[0].Type != MissingEdge {
 		t.Fatalf("direct only: %+v", res.Findings)
 	}
-	if res := Diff(code, req, Options{TransitiveRequired: true}); len(res.Findings) != 0 {
+	if res := Diff(code, reqB, Options{TransitiveRequired: true}); len(res.Findings) != 0 {
 		t.Fatalf("transitive required: %+v", res.Findings)
 	}
 
@@ -238,18 +250,38 @@ func TestMissingEndpointRelationIsUnverifiable(t *testing.T) {
 	}
 }
 
-func TestUndocumentedComponentsRankedByImporters(t *testing.T) {
+func TestUndocumentedComponentsRankApplicationsFirst(t *testing.T) {
+	// pkg/feature imports three components and is imported only by the
+	// wiring: an application component. pkg/util is imported by everyone.
 	code := &codemodel.Model{
-		Components: []codemodel.Component{comp("cmd/api"), comp("internal/a"), comp("pkg/big"), comp("pkg/small"), comp("pkg/used")},
-		Edges:      []codemodel.Edge{edge("cmd/api", "pkg/used", 1), edge("internal/a", "pkg/used", 2)},
+		Components: []codemodel.Component{comp("cmd/app"), comp("internal/a"), comp("internal/b"), comp("pkg/feature"), comp("pkg/util"), comp("pkg/idle"), comp("ext:grpc")},
+		Edges: []codemodel.Edge{
+			edge("cmd/app", "pkg/feature", 1), edge("cmd/app", "pkg/util", 2),
+			edge("pkg/feature", "internal/a", 3), edge("pkg/feature", "internal/b", 4), edge("pkg/feature", "pkg/util", 5),
+			edge("internal/a", "pkg/util", 6), edge("internal/b", "pkg/util", 7), edge("internal/a", "ext:grpc", 8),
+		},
 	}
-	code.Components[2].Packages = []string{"pkg/big", "pkg/big/x", "pkg/big/y"}
-	doc := &docmodel.Model{Components: []docmodel.Component{dc("API", "cmd/api"), dc("A", "internal/a")}}
+	doc := &docmodel.Model{Components: []docmodel.Component{dc("App", "cmd/app"), dc("A", "internal/a"), dc("B", "internal/b")}}
 	var got []string
 	for _, f := range Diff(code, doc, Options{}).Findings {
 		got = append(got, f.Subject)
 	}
-	if want := []string{"pkg/used", "pkg/big", "pkg/small"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"pkg/feature", "pkg/idle", "ext:grpc", "pkg/util"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("order = %v, want %v", got, want)
+	}
+}
+
+func TestProtocolEdgeSatisfiesRequired(t *testing.T) {
+	code := &codemodel.Model{Components: []codemodel.Component{comp("internal/querier"), comp("internal/frontend")},
+		ProtocolEdges: []codemodel.Edge{edge("internal/querier", "internal/frontend", 16)}}
+	doc := &docmodel.Model{Components: []docmodel.Component{dc("Querier", "internal/querier"), dc("Frontend", "internal/frontend")},
+		Relations: []docmodel.Relation{rel("Querier", "Frontend", docmodel.KindRequired, "")}}
+	if res := Diff(code, doc, Options{}); len(res.Findings) != 0 {
+		t.Fatalf("a protocol edge must satisfy a required relation: %+v", res.Findings)
+	}
+	// It is never an undocumented dependency.
+	doc.Relations = nil
+	if res := Diff(code, doc, Options{}); len(res.Findings) != 0 {
+		t.Fatalf("a protocol edge must not be UNDOCUMENTED_EDGE: %+v", res.Findings)
 	}
 }

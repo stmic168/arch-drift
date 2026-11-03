@@ -1,8 +1,8 @@
 {
   "components": [
     {"id": "frontend", "paths": ["service/frontend"]},
-    {"id": "history", "paths": ["service/history"]},
-    {"id": "matching", "paths": ["service/matching"]},
+    {"id": "history", "paths": ["service/history", "api/historyservice"]},
+    {"id": "matching", "paths": ["service/matching", "api/matchingservice"]},
     {"id": "internal-worker", "paths": ["service/worker"]},
     {"id": "service-wiring", "paths": ["service"]},
     {"id": "server", "paths": ["temporal"]},

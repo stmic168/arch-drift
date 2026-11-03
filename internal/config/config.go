@@ -48,6 +48,12 @@ type Config struct {
 		Fail   bool     `json:"fail"`   // fail the check (default: list only)
 		Ignore []string `json:"ignore"` // component ID patterns to skip, e.g. "pkg/ext*"
 	} `json:"undocumented_components"`
+	// UndocumentedEdges controls UNDOCUMENTED_EDGE findings.
+	UndocumentedEdges struct {
+		// Fail the check (default true). Set false for overview docs that
+		// state few relations: the edges are then listed but do not fail.
+		Fail *bool `json:"fail"`
+	} `json:"undocumented_edges"`
 	// Transitive lets import paths through other components count.
 	Transitive struct {
 		Required  bool `json:"required"`
@@ -142,5 +148,6 @@ func (c *Config) DiffOptions() drift.Options {
 		TransitiveForbidden:        c.Transitive.Forbidden,
 		FailUndocumentedComponents: c.UndocumentedComponents.Fail,
 		IgnoreUndocumented:         c.UndocumentedComponents.Ignore,
+		ReportUndocumentedEdges:    c.UndocumentedEdges.Fail != nil && !*c.UndocumentedEdges.Fail,
 	}
 }

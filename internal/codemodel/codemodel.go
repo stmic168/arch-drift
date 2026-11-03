@@ -47,7 +47,11 @@ type Model struct {
 	Module     string      `json:"module"`
 	Components []Component `json:"components"`
 	Edges      []Edge      `json:"edges"`
-	Coverage   Coverage    `json:"coverage"`
+	// ProtocolEdges are imports of another component's shared protocol
+	// package (e.g. its generated gRPC client). They prove a required
+	// relation but are not reported as undocumented dependencies.
+	ProtocolEdges []Edge   `json:"protocol_edges"`
+	Coverage      Coverage `json:"coverage"`
 }
 
 // Coverage says how much of the repo the components cover. Excluded
@@ -127,9 +131,13 @@ type Options struct {
 	// that live inside a component directory. They belong to no component and
 	// importing them creates no edge.
 	Shared []string
-	// NoSharedProtocol disables the default rule that treats generated
-	// protobuf packages (directory name ending in "pb", e.g. storepb) as shared.
+	// NoSharedProtocol disables the default rules that treat generated
+	// protobuf packages as shared: a directory name ending in "pb" (e.g.
+	// storepb), or a directory holding *.pb.go files below a component root
+	// (e.g. api/matchingservice/v1).
 	NoSharedProtocol bool
+
+	generated map[string]bool // dirs holding *.pb.go files, filled by Scan
 }
 
 // IsShared reports whether a repo-relative directory holds shared code.
@@ -141,6 +149,13 @@ func (o Options) IsShared(dir string) bool {
 	}
 	if o.NoSharedProtocol {
 		return false
+	}
+	if o.generated[dir] {
+		// Generated code below a component root is that component's protocol
+		// package; generated code at the root is the component itself.
+		if _, root := o.owner(dir); root != dir {
+			return true
+		}
 	}
 	base := path.Base(dir)
 	if len(base) <= 2 || !strings.HasSuffix(base, "pb") {
@@ -196,9 +211,18 @@ func (o Options) componentOf(dir string) string {
 }
 
 // component also returns the root directory of the matched rule (the
-// configured path, or cmd/x for the default layout).
+// configured path, or cmd/x for the default layout). Shared dirs belong to
+// no component.
 func (o Options) component(dir string) (id, root string) {
-	if o.excluded(dir) || o.IsShared(dir) {
+	if o.IsShared(dir) {
+		return "", ""
+	}
+	return o.owner(dir)
+}
+
+// owner is the component a directory lies in, ignoring the shared rules.
+func (o Options) owner(dir string) (id, root string) {
+	if o.excluded(dir) {
 		return "", ""
 	}
 	bestLen := -1
@@ -276,10 +300,16 @@ func Scan(repo string, opts Options) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	// WalkDir does not follow a symlinked root; resolve it so --repo can be a link.
+	if resolved, err := filepath.EvalSymlinks(repo); err == nil {
+		repo = resolved
+	}
+	opts.generated = generatedDirs(repo, opts)
 	fset := token.NewFileSet()
 	comps := map[string]*Component{}
 	pkgSeen := map[string]map[string]bool{}
 	edges := map[[2]string]map[Location]bool{}
+	protoEdges := map[[2]string]map[Location]bool{}
 	pkgDirs := map[string]bool{}     // every scanned package dir
 	modeledDirs := map[string]bool{} // dirs that belong to a component
 	sharedDirs := map[string]bool{}
@@ -353,7 +383,17 @@ func Scan(repo string, opts Options) (*Model, error) {
 			loc := Location{File: rel, Line: fset.Position(imp.Pos()).Line}
 			var to string
 			if ip == module || strings.HasPrefix(ip, module+"/") {
-				to = opts.componentOf(strings.TrimPrefix(strings.TrimPrefix(ip, module), "/"))
+				target := strings.TrimPrefix(strings.TrimPrefix(ip, module), "/")
+				to = opts.componentOf(target)
+				if to == "" && opts.IsShared(target) {
+					if owner, _ := opts.owner(target); owner != "" && owner != from {
+						k := [2]string{from, owner}
+						if protoEdges[k] == nil {
+							protoEdges[k] = map[Location]bool{}
+						}
+						protoEdges[k][loc] = true
+					}
+				}
 			} else if id := opts.externalID(ip); id != "" {
 				to = id
 				addComp(id, true, loc)
@@ -406,9 +446,17 @@ func Scan(repo string, opts Options) (*Model, error) {
 		m.Components = append(m.Components, *c)
 	}
 	sort.Slice(m.Components, func(i, j int) bool { return m.Components[i].ID < m.Components[j].ID })
+	m.Edges = buildEdges(edges, comps)
+	m.ProtocolEdges = buildEdges(protoEdges, comps)
+	return m, nil
+}
+
+// buildEdges turns collected import sites into sorted edges. An import of a
+// dir with no scanned Go files (e.g. only tests) still needs its target to
+// exist as a component.
+func buildEdges(edges map[[2]string]map[Location]bool, comps map[string]*Component) []Edge {
+	out := []Edge{}
 	for k, locs := range edges {
-		// An internal import of a dir with no scanned Go files (e.g. only tests)
-		// still counts; make sure the target exists as a component.
 		if _, ok := comps[k[1]]; !ok {
 			continue
 		}
@@ -417,15 +465,42 @@ func Scan(repo string, opts Options) (*Model, error) {
 			e.Evidence = append(e.Evidence, l)
 		}
 		sort.Slice(e.Evidence, func(i, j int) bool { return less(e.Evidence[i], e.Evidence[j]) })
-		m.Edges = append(m.Edges, e)
+		out = append(out, e)
 	}
-	sort.Slice(m.Edges, func(i, j int) bool {
-		if m.Edges[i].From != m.Edges[j].From {
-			return m.Edges[i].From < m.Edges[j].From
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].From != out[j].From {
+			return out[i].From < out[j].From
 		}
-		return m.Edges[i].To < m.Edges[j].To
+		return out[i].To < out[j].To
 	})
-	return m, nil
+	return out
+}
+
+// generatedDirs lists repo-relative dirs holding *.pb.go files, with the
+// same skip rules as the scan.
+func generatedDirs(repo string, opts Options) map[string]bool {
+	dirs := map[string]bool{}
+	_ = filepath.WalkDir(repo, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != repo {
+				name := d.Name()
+				if name == "vendor" || name == "testdata" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), ".pb.go") {
+			if rel, err := filepath.Rel(repo, filepath.Dir(p)); err == nil {
+				dirs[filepath.ToSlash(rel)] = true
+			}
+		}
+		return nil
+	})
+	return dirs
 }
 
 func less(a, b Location) bool {
@@ -458,6 +533,16 @@ func (m *Model) Component(id string) (Component, bool) {
 		}
 	}
 	return Component{}, false
+}
+
+// ProtocolEdge looks up a protocol edge.
+func (m *Model) ProtocolEdge(from, to string) (Edge, bool) {
+	for _, e := range m.ProtocolEdges {
+		if e.From == from && e.To == to {
+			return e, true
+		}
+	}
+	return Edge{}, false
 }
 
 // Edge looks up an edge.

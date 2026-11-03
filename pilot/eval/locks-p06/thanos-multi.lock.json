@@ -1,0 +1,311 @@
+{
+  "version": 1,
+  "doc_sha256": "97b3a4ed6c86e083793f0f414b07054503c45ead8599f978e42bd6116fb2c68b",
+  "model": "claude-sonnet-5-5",
+  "code_ids": [
+    "cmd/thanos",
+    "ext:grpc",
+    "ext:memcached",
+    "ext:objstore",
+    "internal/cortex",
+    "pkg/alert",
+    "pkg/api",
+    "pkg/block",
+    "pkg/cache",
+    "pkg/cacheutil",
+    "pkg/clientconfig",
+    "pkg/compact",
+    "pkg/compactv2",
+    "pkg/component",
+    "pkg/compressutil",
+    "pkg/dedup",
+    "pkg/discovery",
+    "pkg/errors",
+    "pkg/errutil",
+    "pkg/exemplars",
+    "pkg/extannotations",
+    "pkg/extflag",
+    "pkg/extgrpc",
+    "pkg/exthttp",
+    "pkg/extkingpin",
+    "pkg/extprom",
+    "pkg/extpromql",
+    "pkg/filter",
+    "pkg/gate",
+    "pkg/info",
+    "pkg/logging",
+    "pkg/logutil",
+    "pkg/losertree",
+    "pkg/metadata",
+    "pkg/model",
+    "pkg/pool",
+    "pkg/prober",
+    "pkg/promclient",
+    "pkg/query",
+    "pkg/queryfrontend",
+    "pkg/querysharding",
+    "pkg/receive",
+    "pkg/reloader",
+    "pkg/replicate",
+    "pkg/rules",
+    "pkg/runutil",
+    "pkg/server",
+    "pkg/shipper",
+    "pkg/status",
+    "pkg/store",
+    "pkg/strutil",
+    "pkg/symboltable",
+    "pkg/targets",
+    "pkg/tenancy",
+    "pkg/testutil",
+    "pkg/tls",
+    "pkg/tracing",
+    "pkg/ui",
+    "pkg/verifier"
+  ],
+  "doc_model": {
+    "components": [
+      {
+        "name": "Alert Component",
+        "code_ids": [
+          "pkg/alert"
+        ],
+        "quote": "│ Alert Component │  │ Dashboards │  ...  │ Web UI │",
+        "external": true,
+        "source": "target/docs/design.md"
+      },
+      {
+        "name": "Compactor",
+        "code_ids": [
+          "pkg/compact",
+          "pkg/compactv2"
+        ],
+        "quote": "The compactor is a singleton process that does not participate in the Thanos cluster.",
+        "source": "target/docs/design.md"
+      },
+      {
+        "name": "Dashboards",
+        "code_ids": [],
+        "quote": "│ Alert Component │  │ Dashboards │  ...  │ Web UI │",
+        "external": true,
+        "source": "target/docs/design.md"
+      },
+      {
+        "name": "Memcached",
+        "code_ids": [
+          "ext:memcached",
+          "pkg/cacheutil"
+        ],
+        "quote": "The `memcached` index cache allows to use [Memcached](https://memcached.org) as cache backend.",
+        "external": true,
+        "source": "target/docs/components/store.md"
+      },
+      {
+        "name": "Object Storage",
+        "code_ids": [
+          "ext:objstore"
+        ],
+        "quote": "A store node acts as a gateway to block data that is stored in an object storage bucket.",
+        "external": true,
+        "source": "target/docs/design.md"
+      },
+      {
+        "name": "Prometheus",
+        "code_ids": [],
+        "quote": "Prometheus instances are configured to continuously write metrics to it",
+        "external": true,
+        "source": "target/docs/components/receive.md"
+      },
+      {
+        "name": "Querier",
+        "code_ids": [
+          "pkg/api",
+          "pkg/query",
+          "pkg/ui"
+        ],
+        "quote": "Queriers are stateless and horizontally scalable instances that implement PromQL on top of the Store APIs exposed in the cluster.",
+        "source": "target/docs/design.md"
+      },
+      {
+        "name": "Query Frontend",
+        "code_ids": [
+          "internal/cortex",
+          "pkg/queryfrontend"
+        ],
+        "quote": "The `thanos query-frontend` command implements a service that can be put in front of Thanos Queriers to improve the read path.",
+        "source": "target/docs/components/query-frontend.md"
+      },
+      {
+        "name": "Receiver",
+        "code_ids": [
+          "pkg/receive"
+        ],
+        "quote": "The `thanos receive` command implements the [Prometheus Remote Write API]",
+        "source": "target/docs/components/receive.md"
+      },
+      {
+        "name": "Rule",
+        "code_ids": [
+          "pkg/rules"
+        ],
+        "quote": "The rule node directly implements it on top of the Prometheus storage engine it is running.",
+        "source": "target/docs/design.md"
+      },
+      {
+        "name": "Sidecar",
+        "code_ids": [
+          "pkg/shipper",
+          "pkg/store"
+        ],
+        "quote": "the Prometheus sidecar and rule nodes",
+        "source": "target/docs/design.md"
+      },
+      {
+        "name": "Store",
+        "code_ids": [
+          "pkg/store"
+        ],
+        "quote": "A store node acts as a gateway to block data that is stored in an object storage bucket.",
+        "source": "target/docs/design.md"
+      }
+    ],
+    "relations": [
+      {
+        "from": "Alert Component",
+        "to": "Querier",
+        "kind": "required",
+        "protocol": "HTTP",
+        "quote": "│ Alert Component │  │ Dashboards │  ...  │ Web UI │",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Compactor",
+        "to": "Object Storage",
+        "kind": "required",
+        "protocol": "object storage API",
+        "quote": "Instead, it is only pointed at an object storage bucket and continuously consolidates multiple smaller blocks into larger ones.",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Dashboards",
+        "to": "Querier",
+        "kind": "required",
+        "protocol": "HTTP",
+        "quote": "│ Alert Component │  │ Dashboards │  ...  │ Web UI │",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Prometheus",
+        "to": "Receiver",
+        "kind": "required",
+        "protocol": "HTTP",
+        "quote": "Prometheus instances are configured to continuously write metrics to it",
+        "source": "target/docs/components/receive.md"
+      },
+      {
+        "from": "Querier",
+        "to": "Receiver",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Thanos Receive exposes the StoreAPI so that [Thanos Queriers](query.md) can query received metrics in real-time.",
+        "source": "target/docs/components/receive.md"
+      },
+      {
+        "from": "Querier",
+        "to": "Rule",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Queriers are stateless and horizontally scalable instances that implement PromQL on top of the Store APIs exposed in the cluster.",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Querier",
+        "to": "Sidecar",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Queriers are stateless and horizontally scalable instances that implement PromQL on top of the Store APIs exposed in the cluster.",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Querier",
+        "to": "Store",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Queriers are stateless and horizontally scalable instances that implement PromQL on top of the Store APIs exposed in the cluster.",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Query Frontend",
+        "to": "Memcached",
+        "kind": "required",
+        "protocol": "memcached",
+        "quote": "Currently, in-memory cache (fifo cache), memcached, and redis are supported.",
+        "source": "target/docs/components/query-frontend.md"
+      },
+      {
+        "from": "Query Frontend",
+        "to": "Querier",
+        "kind": "required",
+        "protocol": "HTTP",
+        "quote": "The `thanos query-frontend` command implements a service that can be put in front of Thanos Queriers to improve the read path.",
+        "source": "target/docs/components/query-frontend.md"
+      },
+      {
+        "from": "Receiver",
+        "to": "Object Storage",
+        "kind": "required",
+        "protocol": "object storage API",
+        "quote": "then Thanos Receive uploads TSDB blocks to an object storage bucket every 2 hours by default",
+        "source": "target/docs/components/receive.md"
+      },
+      {
+        "from": "Rule",
+        "to": "Object Storage",
+        "kind": "required",
+        "protocol": "object storage",
+        "quote": "Those block files can be backed up to object storage and later be queried by another component (see below).",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Rule",
+        "to": "Querier",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "Rule nodes in return can discover query nodes to evaluate recording and alerting rules.",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Sidecar",
+        "to": "Object Storage",
+        "kind": "required",
+        "protocol": "object storage",
+        "quote": "Those block files can be backed up to object storage and later be queried by another component (see below).",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Sidecar",
+        "to": "Prometheus",
+        "kind": "required",
+        "protocol": "HTTP",
+        "quote": "The sidecar implements the gRPC service on top of Prometheus' [HTTP and remote-read APIs]",
+        "source": "target/docs/design.md"
+      },
+      {
+        "from": "Store",
+        "to": "Memcached",
+        "kind": "required",
+        "protocol": "memcached",
+        "quote": "The `memcached` index cache allows to use [Memcached](https://memcached.org) as cache backend.",
+        "source": "target/docs/components/store.md"
+      },
+      {
+        "from": "Store",
+        "to": "Object Storage",
+        "kind": "required",
+        "protocol": "object storage API",
+        "quote": "It continuously synchronizes which blocks exist in the bucket and translates requests for metric data into object storage requests.",
+        "source": "target/docs/design.md"
+      }
+    ]
+  }
+}

@@ -83,6 +83,7 @@ type Report struct {
 	Missing          []string           `json:"missing_nodes"`
 	External         []string           `json:"external_nodes"`
 	FailUndocumented bool               `json:"undocumented_components_fail"`
+	ReportEdges      bool               `json:"undocumented_edges_report_only"`
 	Undoc            []string           `json:"undocumented_nodes"`
 	Lock             string             `json:"lock,omitempty"`
 	Config           string             `json:"config,omitempty"`
@@ -103,6 +104,7 @@ type Input struct {
 	Config                    string   // config file path, when one was used
 	Baseline                  string   // baseline file path, when one was used
 	FailUndocumented          bool     // UNDOCUMENTED_COMPONENT fails the check
+	ReportUndocumentedEdges   bool     // UNDOCUMENTED_EDGE is informational
 }
 
 // Build assembles the report.
@@ -156,7 +158,7 @@ func Build(in Input) *Report {
 		Tool: "archdrift", Repo: in.Repo, Doc: in.Doc, Module: in.Code.Module,
 		Summary: s, Findings: in.Result.Findings, Dropped: dropped, Usage: u,
 		Code: in.Code, DocModel: in.DocModel, Graph: in.Result.Graph,
-		Missing: in.Result.MissingNodes, External: in.Result.ExternalNodes, FailUndocumented: in.FailUndocumented, Undoc: in.Result.UndocumentedNodes,
+		Missing: in.Result.MissingNodes, External: in.Result.ExternalNodes, FailUndocumented: in.FailUndocumented, ReportEdges: in.ReportUndocumentedEdges, Undoc: in.Result.UndocumentedNodes,
 		Lock: in.Lock, Notes: notes, Config: in.Config, Baseline: in.Baseline,
 	}
 }
@@ -223,11 +225,15 @@ func Markdown(r *Report) string {
 	if r.FailUndocumented {
 		undocSev, undocFail = drift.Low, "yes"
 	}
+	edgeSev, edgeFail := drift.Low, "yes"
+	if r.ReportEdges {
+		edgeSev, edgeFail = drift.Info, "no (config: undocumented_edges.fail)"
+	}
 	rows := []struct{ t, sev, fail string }{
 		{drift.ForbiddenEdge, drift.High, "yes"},
 		{drift.MissingComponent, drift.Medium, "yes"},
 		{drift.MissingEdge, drift.Medium, "yes"},
-		{drift.UndocumentedEdge, drift.Low, "yes"},
+		{drift.UndocumentedEdge, edgeSev, edgeFail},
 		{drift.UndocumentedComponent, undocSev, undocFail},
 		{drift.Unverifiable, drift.Info, "no"},
 	}

@@ -61,6 +61,10 @@ type Options struct {
 	// Off by default: architecture docs describe a few major components, so
 	// every utility package would otherwise be drift.
 	FailUndocumentedComponents bool
+	// ReportUndocumentedEdges makes UNDOCUMENTED_EDGE informational (non-failing).
+	// For overview docs that state few relations, where every unlisted import
+	// between documented components would otherwise fail the check.
+	ReportUndocumentedEdges bool
 	// IgnoreUndocumented lists component ID patterns (path.Match syntax, e.g.
 	// "pkg/ext*") never reported as UNDOCUMENTED_COMPONENT.
 	IgnoreUndocumented []string
@@ -121,7 +125,7 @@ func (r *Result) Failing() bool {
 }
 
 // networkProtocols are runtime transports that static imports cannot prove.
-var networkProtocols = []string{"http", "https", "rest", "grpc", "rpc", "graphql", "websocket", "queue", "kafka", "amqp", "rabbitmq", "nats", "sqs", "sns", "pubsub", "pub/sub", "event", "message", "async", "stream", "webhook", "tcp", "udp"}
+var networkProtocols = []string{"network", "http", "https", "rest", "grpc", "rpc", "graphql", "websocket", "queue", "kafka", "amqp", "rabbitmq", "nats", "sqs", "sns", "pubsub", "pub/sub", "event", "message", "async", "stream", "webhook", "tcp", "udp"}
 
 // IsNetworkProtocol reports whether the doc's protocol string names a runtime transport.
 func IsNetworkProtocol(p string) bool {
@@ -218,6 +222,17 @@ func importPath(code *codemodel.Model, from, to []string) []codemodel.Edge {
 	return nil
 }
 
+func protocolHit(code *codemodel.Model, from, to []string) (codemodel.Edge, bool) {
+	for _, f := range from {
+		for _, t := range to {
+			if e, ok := code.ProtocolEdge(f, t); ok {
+				return e, true
+			}
+		}
+	}
+	return codemodel.Edge{}, false
+}
+
 func chainEvidence(chain []codemodel.Edge) ([]codemodel.Location, []string) {
 	var ev []codemodel.Location
 	via := []string{chain[0].From}
@@ -256,12 +271,10 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 			})
 		}
 	}
-	importers := map[string]map[string]bool{}
-	for _, e := range code.Edges {
-		if importers[e.To] == nil {
-			importers[e.To] = map[string]bool{}
-		}
-		importers[e.To][e.From] = true
+	importers, imports := map[string]int{}, map[string]int{}
+	for _, e := range code.Edges { // edges are unique per (from, to)
+		importers[e.To]++
+		imports[e.From]++
 	}
 	for _, cc := range code.Components {
 		if len(owners[cc.ID]) > 0 || opts.ignoredUndocumented(cc.ID) {
@@ -272,11 +285,15 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 		if opts.FailUndocumentedComponents {
 			sev = Low
 		}
-		n := len(importers[cc.ID])
+		// Rank application components above utilities: a feature or service
+		// imports many components and is imported by few (often only the
+		// wiring), a utility the other way round. The pilot showed that
+		// ranking by importers buried Thanos' Receive at 33 of 44.
+		in, out := importers[cc.ID], imports[cc.ID]
 		res.Findings = append(res.Findings, Finding{
 			ID: UndocumentedComponent + ":" + cc.ID, Type: UndocumentedComponent, Severity: sev, Failing: opts.FailUndocumentedComponents,
-			Subject: cc.ID, From: cc.ID, Weight: n*100 + len(cc.Packages),
-			Message: fmt.Sprintf("Code component %s (%d package(s), imported by %d component(s)) is not described in the doc.", cc.ID, len(cc.Packages), n),
+			Subject: cc.ID, From: cc.ID, Weight: (out-in)*1000 + out,
+			Message: fmt.Sprintf("Code component %s (%d package(s), imports %d component(s), imported by %d) is not described in the doc.", cc.ID, len(cc.Packages), out, in),
 			Code:    []codemodel.Location{cc.Anchor},
 		})
 	}
@@ -379,7 +396,16 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				}
 				continue
 			}
-			if opts.TransitiveRequired {
+			// An import of the target's protocol package (generated gRPC client
+			// and types) proves the dependency even though it creates no edge.
+			if e, ok := protocolHit(code, fc.CodeIDs, tc.CodeIDs); ok {
+				addGraph(e.From, e.To, EdgeOK, "via protocol package")
+				continue
+			}
+			// External systems are usually reached through a client wrapper
+			// (store -> cacheutil -> memcached, ha -> ring/kv -> consul), so an
+			// import path is enough for them even without transitive.required.
+			if opts.TransitiveRequired || allOf(tc.CodeIDs, isExternal) {
 				if chain := importPath(code, fc.CodeIDs, tc.CodeIDs); chain != nil {
 					_, via := chainEvidence(chain)
 					addGraph(chain[0].From, chain[len(chain)-1].To, EdgeOK, "via "+strings.Join(via[1:len(via)-1], ", "))
@@ -418,8 +444,12 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 		}
 		addGraph(e.From, e.To, EdgeUndocumented, "")
 		subject := strings.Join(owners[e.From], "/") + " -> " + strings.Join(owners[e.To], "/")
+		sev, failing := Low, true
+		if opts.ReportUndocumentedEdges {
+			sev, failing = Info, false
+		}
 		res.Findings = append(res.Findings, Finding{
-			ID: UndocumentedEdge + ":" + e.From + "->" + e.To, Type: UndocumentedEdge, Severity: Low, Failing: true,
+			ID: UndocumentedEdge + ":" + e.From + "->" + e.To, Type: UndocumentedEdge, Severity: sev, Failing: failing,
 			Subject: subject, From: e.From, To: e.To,
 			Message: fmt.Sprintf("Code has %s importing %s, which the doc does not mention.", e.From, e.To),
 			Code:    e.Evidence,
