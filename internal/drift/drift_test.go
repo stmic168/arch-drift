@@ -258,3 +258,18 @@ func TestUndocumentedComponentsRankApplicationsFirst(t *testing.T) {
 		t.Fatalf("order = %v, want %v", got, want)
 	}
 }
+
+func TestProtocolEdgeSatisfiesRequired(t *testing.T) {
+	code := &codemodel.Model{Components: []codemodel.Component{comp("internal/querier"), comp("internal/frontend")},
+		ProtocolEdges: []codemodel.Edge{edge("internal/querier", "internal/frontend", 16)}}
+	doc := &docmodel.Model{Components: []docmodel.Component{dc("Querier", "internal/querier"), dc("Frontend", "internal/frontend")},
+		Relations: []docmodel.Relation{rel("Querier", "Frontend", docmodel.KindRequired, "")}}
+	if res := Diff(code, doc, Options{}); len(res.Findings) != 0 {
+		t.Fatalf("a protocol edge must satisfy a required relation: %+v", res.Findings)
+	}
+	// It is never an undocumented dependency.
+	doc.Relations = nil
+	if res := Diff(code, doc, Options{}); len(res.Findings) != 0 {
+		t.Fatalf("a protocol edge must not be UNDOCUMENTED_EDGE: %+v", res.Findings)
+	}
+}

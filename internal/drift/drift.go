@@ -218,6 +218,17 @@ func importPath(code *codemodel.Model, from, to []string) []codemodel.Edge {
 	return nil
 }
 
+func protocolHit(code *codemodel.Model, from, to []string) (codemodel.Edge, bool) {
+	for _, f := range from {
+		for _, t := range to {
+			if e, ok := code.ProtocolEdge(f, t); ok {
+				return e, true
+			}
+		}
+	}
+	return codemodel.Edge{}, false
+}
+
 func chainEvidence(chain []codemodel.Edge) ([]codemodel.Location, []string) {
 	var ev []codemodel.Location
 	via := []string{chain[0].From}
@@ -379,6 +390,12 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				for _, e := range hits {
 					addGraph(e.From, e.To, EdgeOK, r.Protocol)
 				}
+				continue
+			}
+			// An import of the target's protocol package (generated gRPC client
+			// and types) proves the dependency even though it creates no edge.
+			if e, ok := protocolHit(code, fc.CodeIDs, tc.CodeIDs); ok {
+				addGraph(e.From, e.To, EdgeOK, "via protocol package")
 				continue
 			}
 			if opts.TransitiveRequired {

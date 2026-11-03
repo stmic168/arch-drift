@@ -227,3 +227,39 @@ func TestScanFollowsSymlinkedRoot(t *testing.T) {
 		t.Fatalf("components via symlink = %d, want 9", len(m.Components))
 	}
 }
+
+func TestProtocolPackages(t *testing.T) {
+	repo := writeRepo(t, map[string]string{
+		"go.mod":                               "module example.com/x\n",
+		"service/history/history.go":           "package history\n\nimport _ \"example.com/x/api/matchingservice/v1\"\n",
+		"service/matching/matching.go":         "package matching\n",
+		"api/matchingservice/v1/service.pb.go": "package matchingservice\n",
+		"api/matchingservice/v1/helpers.go":    "package matchingservice\n",
+		"service/billing/billing.pb.go":        "package billing\n",
+		"service/history/client/client.go":     "package client\n\nimport _ \"example.com/x/service/billing\"\n",
+	})
+	opts := Options{Components: []ComponentRule{
+		{ID: "history", Paths: []string{"service/history"}},
+		{ID: "matching", Paths: []string{"service/matching", "api/matchingservice"}},
+		{ID: "billing", Paths: []string{"service/billing"}},
+	}}
+	m, err := Scan(repo, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// api/matchingservice/v1 holds *.pb.go below matching's root: shared, so no
+	// edge, but a protocol edge history -> matching.
+	if _, ok := m.Edge("history", "matching"); ok {
+		t.Error("a protocol package import must not create a dependency edge")
+	}
+	if e, ok := m.ProtocolEdge("history", "matching"); !ok || e.Evidence[0].String() != "service/history/history.go:3" {
+		t.Errorf("protocol edge = %+v %v", e, ok)
+	}
+	// Generated code at a component root is the component itself, not shared.
+	if _, ok := m.Edge("history", "billing"); !ok {
+		t.Error("service/billing has *.pb.go at its root and must stay a normal component")
+	}
+	if !reflect.DeepEqual(m.Coverage.Shared, []string{"api/matchingservice/v1"}) {
+		t.Errorf("shared = %v", m.Coverage.Shared)
+	}
+}
