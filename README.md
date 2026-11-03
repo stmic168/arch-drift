@@ -127,6 +127,7 @@ Optional, at the repo root (or `--config`). JSON rather than YAML because the st
 | `shared` | Directories of shared code inside a component directory (protocol types, small helpers such as `pkg/querier/stats`). They belong to no component and importing them creates no edge. |
 | `shared_protocol_packages` | Treat generated protobuf packages as shared: a directory name ending in `pb` (e.g. `storepb`), or a directory holding `*.pb.go` files below a component root (e.g. `api/matchingservice/v1` when `api/matchingservice` is mapped to a component). Default `true`. |
 | `undocumented_components.fail` | Make `UNDOCUMENTED_COMPONENT` fail the check. Default `false`: they are listed but do not fail, ranked application-first (components that import many others and are imported by few come first, widely imported utilities last). |
+| `strict_protocols` | Default `false`. When `true`, a runtime protocol on a relation counts only if the relation's doc quote names it; a protocol the model inferred (e.g. `network` for "A coordinates with B") is ignored and the relation is checked by imports. Use it for rules docs, where a missed violation is worse than an unverifiable runtime call. |
 | `undocumented_edges.fail` | Default `true`. Set `false` for overview docs that state few relations: `UNDOCUMENTED_EDGE` is then listed as info and does not fail the check, so only missing components, missing or forbidden edges fail. |
 | `undocumented_components.ignore` | Component ID patterns (`path.Match` syntax, e.g. `"pkg/ext*"`) never reported as undocumented. |
 | `default_layout` | Keep the `cmd/x`, `internal/x`, `pkg/x` rule for directories no configured component matches. Default `true`; set `false` to model only configured components. |
@@ -211,6 +212,10 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 ## Pilot on public repositories
 
 `.github/workflows/pilot.yml` (manual) runs archdrift on any public Go repository: it shallow-clones the repo, prints `scan`, runs `lock` (one API call; only the doc and component IDs are sent), runs `check` from that lock, and prints the doc mapping and every finding to the log and job summary. Inputs: `repo` (owner/name), optional `ref`, `doc` (path in that repo; comma-separated for several files), optional `config` (a file under `pilot/` in this repo) and `model`. The log also prints the lock JSON, so a run can be replayed offline against the same mapping. Configs for pilot targets live in `pilot/` (e.g. `pilot/temporal.json`).
+
+### Rules docs (gate mode)
+
+archdrift is strongest when the doc states rules ("A must not depend on B", "A sends to B"), for example an ADR. `pilot/docs/cortex-rules.md` is such a doc for Cortex, with ground truth in `pilot/docs/cortex-rules.expected.json` (3 violated prohibitions, 2 absent requirements, 8 rules that hold). With `pilot/cortex-rules.json` (`strict_protocols`, undocumented edges report-only), two independent pilot runs each found exactly the 5 violations with `file:line` evidence and nothing else. Prohibitions are also violated by importing the target's generated gRPC client (a protocol edge).
 
 ### Offline evaluation
 

@@ -285,3 +285,37 @@ func TestProtocolEdgeSatisfiesRequired(t *testing.T) {
 		t.Fatalf("a protocol edge must not be UNDOCUMENTED_EDGE: %+v", res.Findings)
 	}
 }
+
+func TestProtocolEdgeViolatesForbidden(t *testing.T) {
+	code := &codemodel.Model{Components: []codemodel.Component{comp("internal/storage"), comp("internal/ingester")},
+		ProtocolEdges: []codemodel.Edge{edge("internal/storage", "internal/ingester", 6)}}
+	doc := &docmodel.Model{Components: []docmodel.Component{dc("Storage", "internal/storage"), dc("Ingester", "internal/ingester")},
+		Relations: []docmodel.Relation{rel("Storage", "Ingester", docmodel.KindForbidden, "")}}
+	res := Diff(code, doc, Options{})
+	if len(res.Findings) != 1 || res.Findings[0].Type != ForbiddenEdge || res.Findings[0].Code[0].String() != "internal/storage/x.go:6" {
+		t.Fatalf("importing the target's protocol package must violate a forbidden relation: %+v", res.Findings)
+	}
+}
+
+func TestStrictProtocols(t *testing.T) {
+	code := &codemodel.Model{Components: []codemodel.Component{comp("internal/purger"), comp("internal/compactor")}}
+	inferred := docmodel.Relation{From: "Purger", To: "Compactor", Kind: docmodel.KindRequired, Protocol: "network", Quote: "The Purger must coordinate with the Compactor."}
+	stated := docmodel.Relation{From: "Purger", To: "Compactor", Kind: docmodel.KindRequired, Protocol: "gRPC", Quote: "The Purger calls the Compactor over gRPC."}
+	comps := []docmodel.Component{dc("Purger", "internal/purger"), dc("Compactor", "internal/compactor")}
+	typeOf := func(r docmodel.Relation, o Options) string {
+		res := Diff(code, &docmodel.Model{Components: comps, Relations: []docmodel.Relation{r}}, o)
+		if len(res.Findings) != 1 {
+			t.Fatalf("findings = %+v", res.Findings)
+		}
+		return res.Findings[0].Type
+	}
+	if got := typeOf(inferred, Options{}); got != Unverifiable {
+		t.Errorf("lenient, inferred protocol: %s, want UNVERIFIABLE", got)
+	}
+	if got := typeOf(inferred, Options{StrictProtocols: true}); got != MissingEdge {
+		t.Errorf("strict, inferred protocol: %s, want MISSING_EDGE", got)
+	}
+	if got := typeOf(stated, Options{StrictProtocols: true}); got != Unverifiable {
+		t.Errorf("strict, stated protocol: %s, want UNVERIFIABLE", got)
+	}
+}

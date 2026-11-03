@@ -25,3 +25,18 @@ pilot/eval/run.sh /tmp/archdrift /tmp/archdrift-eval
 - A failing finding without a label is printed as `UNGRADED`; grade it and add it.
 - `_important_undocumented` lists real undocumented components; the score shows
   their rank in the non-failing UNDOCUMENTED_COMPONENT list (lower is better).
+
+## Gate-mode pilot (rules doc)
+
+`locks-gate/run1.lock.json` and `run2.lock.json` come from pilot runs 41575578152 and
+41575581758: cortexproject/cortex @ a55f3193 checked against `pilot/docs/cortex-rules.md`.
+Replay one with a Cortex clone linked as `target` and this repo's `pilot/` linked as `pilot`:
+
+```bash
+archdrift check --repo target --doc pilot/docs/cortex-rules.md --config pilot/cortex-rules.json \
+  --lock pilot/eval/locks-gate/run1.lock.json --out out
+```
+
+Expected failing findings are in `pilot/docs/cortex-rules.expected.json`. Without
+`strict_protocols`, run 1 reports Purger -> Compactor as UNVERIFIABLE (the model tagged it
+`network`) instead of MISSING_EDGE.
