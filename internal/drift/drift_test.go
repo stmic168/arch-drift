@@ -285,3 +285,14 @@ func TestProtocolEdgeSatisfiesRequired(t *testing.T) {
 		t.Fatalf("a protocol edge must not be UNDOCUMENTED_EDGE: %+v", res.Findings)
 	}
 }
+
+func TestProtocolEdgeViolatesForbidden(t *testing.T) {
+	code := &codemodel.Model{Components: []codemodel.Component{comp("internal/storage"), comp("internal/ingester")},
+		ProtocolEdges: []codemodel.Edge{edge("internal/storage", "internal/ingester", 6)}}
+	doc := &docmodel.Model{Components: []docmodel.Component{dc("Storage", "internal/storage"), dc("Ingester", "internal/ingester")},
+		Relations: []docmodel.Relation{rel("Storage", "Ingester", docmodel.KindForbidden, "")}}
+	res := Diff(code, doc, Options{})
+	if len(res.Findings) != 1 || res.Findings[0].Type != ForbiddenEdge || res.Findings[0].Code[0].String() != "internal/storage/x.go:6" {
+		t.Fatalf("importing the target's protocol package must violate a forbidden relation: %+v", res.Findings)
+	}
+}

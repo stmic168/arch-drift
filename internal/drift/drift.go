@@ -354,6 +354,18 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 		}
 		switch r.Kind {
 		case docmodel.KindForbidden:
+			// Importing the target's protocol package (its generated gRPC
+			// client) is calling it, so it violates "must not depend on" too.
+			if len(hits) == 0 {
+				for _, f := range fc.CodeIDs {
+					for _, t := range tc.CodeIDs {
+						if e, ok := code.ProtocolEdge(f, t); ok {
+							hits = append(hits, e)
+							evidence = append(evidence, e.Evidence...)
+						}
+					}
+				}
+			}
 			if len(hits) == 0 && opts.TransitiveForbidden {
 				if chain := importPath(code, fc.CodeIDs, tc.CodeIDs); chain != nil {
 					ev, via := chainEvidence(chain)

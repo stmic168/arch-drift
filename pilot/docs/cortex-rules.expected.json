@@ -1,0 +1,15 @@
+{
+  "_doc": "Ground truth for pilot/docs/cortex-rules.md on cortexproject/cortex @ a55f3193543cc386f2b32de3a17f24f9d86973ef, computed from imports independently of archdrift. Failing findings expected with pilot/cortex-rules.json (undocumented edges report-only).",
+  "failing": [
+    {"type": "FORBIDDEN_EDGE", "subject": "Hash ring -> Querier", "evidence": "pkg/ring/replication_set.go imports pkg/querier/partialdata (rule 8)"},
+    {"type": "FORBIDDEN_EDGE", "subject": "Storage layer -> Ingester", "evidence": "pkg/storage imports the ingester's generated client pkg/ingester/client (rule 9)"},
+    {"type": "FORBIDDEN_EDGE", "subject": "Distributor -> Querier", "evidence": "pkg/distributor/query.go imports pkg/querier/stats and partialdata (rule 10)"},
+    {"type": "MISSING_EDGE", "subject": "Purger -> Compactor", "evidence": "pkg/purger imports only pkg/storage among components (rule 6)"},
+    {"type": "MISSING_EDGE", "subject": "Overrides -> Configs API", "evidence": "pkg/overrides imports only pkg/storage among components (rule 7)"}
+  ],
+  "holds": [
+    "rule 1 Distributor -> Ingester", "rule 2 Querier -> Store gateway", "rule 3 Ruler -> Querier",
+    "rule 4 Compactor -> Storage layer", "rule 5 Query frontend -> Query scheduler",
+    "rule 11 Distributor must not -> Store gateway", "rule 12 Compactor must not -> Querier", "rule 13 Ingester must not -> Store gateway"
+  ]
+}

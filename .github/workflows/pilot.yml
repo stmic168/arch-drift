@@ -16,7 +16,12 @@ on:
         default: ""
       doc:
         description: Path(s) of the design doc inside that repository, comma-separated for several files
-        required: true
+        required: false
+        default: ""
+      local_docs:
+        description: Extra doc(s) from this repository, comma-separated, each pilot/docs/<name>.md (e.g. a rules ADR written for the pilot)
+        required: false
+        default: ""
       config:
         description: Optional archdrift config in this repository (e.g. pilot/temporal.json)
         required: false
@@ -37,6 +42,7 @@ jobs:
       REPO: ${{ inputs.repo }}
       REF: ${{ inputs.ref }}
       DOC: ${{ inputs.doc }}
+      LOCAL_DOCS: ${{ inputs.local_docs }}
       CONFIG: ${{ inputs.config }}
       MODEL: ${{ inputs.model }}
     steps:
@@ -47,10 +53,19 @@ jobs:
           fi
           [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::repo must be owner/name"; exit 1; }
           [[ -z "$REF" || "$REF" =~ ^[A-Za-z0-9_./-]+$ ]] || { echo "::error::invalid ref"; exit 1; }
-          IFS=',' read -ra docs <<< "$DOC"
-          for d in "${docs[@]}"; do
-            [[ -n "$d" && "$d" != /* && "$d" != *..* && "$d" =~ ^[A-Za-z0-9_./-]+$ ]] || { echo "::error::doc paths must be relative paths inside the repo: $d"; exit 1; }
-          done
+          [[ -n "$DOC" || -n "$LOCAL_DOCS" ]] || { echo "::error::give doc and/or local_docs"; exit 1; }
+          if [ -n "$DOC" ]; then
+            IFS=',' read -ra docs <<< "$DOC"
+            for d in "${docs[@]}"; do
+              [[ -n "$d" && "$d" != /* && "$d" != *..* && "$d" =~ ^[A-Za-z0-9_./-]+$ ]] || { echo "::error::doc paths must be relative paths inside the repo: $d"; exit 1; }
+            done
+          fi
+          if [ -n "$LOCAL_DOCS" ]; then
+            IFS=',' read -ra ldocs <<< "$LOCAL_DOCS"
+            for d in "${ldocs[@]}"; do
+              [[ "$d" =~ ^pilot/docs/[A-Za-z0-9_.-]+\.md$ && "$d" != *..* ]] || { echo "::error::local_docs must be pilot/docs/<name>.md: $d"; exit 1; }
+            done
+          fi
           [[ -z "$CONFIG" || ( "$CONFIG" == pilot/*.json && "$CONFIG" != *..* ) ]] || { echo "::error::config must be pilot/<name>.json"; exit 1; }
 
       - uses: actions/checkout@v7
@@ -68,10 +83,12 @@ jobs:
             git clone --depth 1 "https://github.com/$REPO" target
           fi
           echo "target: $REPO @ $(git -C target rev-parse HEAD)"
-          IFS=',' read -ra docs <<< "$DOC"
-          for d in "${docs[@]}"; do
-            test -f "target/$d" || { echo "::error::doc not found: $d"; exit 1; }
-          done
+          if [ -n "$DOC" ]; then
+            IFS=',' read -ra docs <<< "$DOC"
+            for d in "${docs[@]}"; do
+              test -f "target/$d" || { echo "::error::doc not found: $d"; exit 1; }
+            done
+          fi
 
       - name: Scan
         run: |
@@ -82,14 +99,16 @@ jobs:
       - name: Lock (calls the API once)
         run: |
           args=(--repo target --lock out/doc.lock.json --out out --model "$MODEL")
-          IFS=',' read -ra docs <<< "$DOC"; for d in "${docs[@]}"; do args+=(--doc "target/$d"); done
+          if [ -n "$DOC" ]; then IFS=',' read -ra docs <<< "$DOC"; for d in "${docs[@]}"; do args+=(--doc "target/$d"); done; fi
+          if [ -n "$LOCAL_DOCS" ]; then IFS=',' read -ra ldocs <<< "$LOCAL_DOCS"; for d in "${ldocs[@]}"; do args+=(--doc "$d"); done; fi
           [ -n "$CONFIG" ] && args+=(--config "$CONFIG")
           ./archdrift lock "${args[@]}" | tee out/lock-review.txt
 
       - name: Check (reads the lock, no API call)
         run: |
           args=(--repo target --lock out/doc.lock.json --out out)
-          IFS=',' read -ra docs <<< "$DOC"; for d in "${docs[@]}"; do args+=(--doc "target/$d"); done
+          if [ -n "$DOC" ]; then IFS=',' read -ra docs <<< "$DOC"; for d in "${docs[@]}"; do args+=(--doc "target/$d"); done; fi
+          if [ -n "$LOCAL_DOCS" ]; then IFS=',' read -ra ldocs <<< "$LOCAL_DOCS"; for d in "${ldocs[@]}"; do args+=(--doc "$d"); done; fi
           [ -n "$CONFIG" ] && args+=(--config "$CONFIG")
           set +e
           ./archdrift check "${args[@]}"
@@ -112,7 +131,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Pilot: \`$REPO\` (\`$DOC\`)"
+            echo "## Pilot: \`$REPO\` (\`$DOC\` \`$LOCAL_DOCS\`)"
             echo
             if [ -f out/lock-review.txt ]; then echo '```'; cat out/lock-review.txt; echo '```'; fi
             if [ -f out/report.md ]; then cat out/report.md; fi
