@@ -27,7 +27,10 @@ go build -o archdrift ./cmd/archdrift
 ./archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock]
 ./archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>]
 ./archdrift baseline --repo <path> --doc <design.md> [same flags as check]
+./archdrift scan --repo <path> [--config <json>] [--json]
 ```
+
+`scan` prints the code model only (components, which are deployables, packages, import edges in and out) without reading a doc or calling the API. Use it to see how archdrift sees a repo and to write `archdrift.json`.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -125,7 +128,7 @@ Optional, at the repo root (or `--config`). JSON rather than YAML because the st
 | `transitive.required` | A required relation is also satisfied by an import path through other components (e.g. `api -> store -> ext:postgres` satisfies "API uses Postgres"). Each hop still needs its own doc relation, or it shows as `UNDOCUMENTED_EDGE`. |
 | `transitive.forbidden` | A forbidden relation is also violated by an indirect path. The finding lists the path and the `file:line` of each hop. |
 
-A component is a deployable (separately run program) when it contains a `main` package, whatever its directory. Deployables drive the `UNVERIFIABLE` rule.
+A component is a deployable (separately run program) when a `main` package sits at its root directory (`cmd/x`, or the configured path), whatever the layout. A helper tool nested deeper inside a component does not count. Deployables drive the `UNVERIFIABLE` rule.
 
 ## Pipeline
 
@@ -166,6 +169,7 @@ internal/codemodel          scanner
 internal/docmodel           Extractor interface, Anthropic client, cache, verifier
 internal/drift              deterministic diff
 internal/report             Markdown, Mermaid, JSON
+pilot/                      archdrift.json configs for pilot repositories
 testdata/shop/              fixture: Go repo, design.md, recorded docmodel.json, design.lock.json, expected.json
 ```
 
@@ -183,6 +187,10 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 
 - `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: `go vet`, `go test`, an offline fixture run with `--doc-model`, and a run that reads the committed `testdata/shop/design.lock.json`; both must exit 1.
 - `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture (with `--no-lock`), so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), prints the doc model and dropped claims to the log, fails if the failing findings differ from `expected.json` (a different `UNVERIFIABLE` set is only a notice, since it depends on how the model reads runtime relations), puts `report.md` in the job summary, and uploads the reports as an artifact. You can pick a branch under **Use workflow from**. GitHub only shows **Run workflow** once the workflow file is on the default branch.
+
+## Pilot on public repositories
+
+`.github/workflows/pilot.yml` (manual) runs archdrift on any public Go repository: it shallow-clones the repo, prints `scan`, runs `lock` (one API call; only the doc and component IDs are sent), runs `check` from that lock, and prints the doc mapping and every finding to the log and job summary. Inputs: `repo` (owner/name), optional `ref`, `doc` (path in that repo), optional `config` (a file under `pilot/` in this repo) and `model`. Configs for pilot targets live in `pilot/` (e.g. `pilot/temporal.json`).
 
 ## Limitations
 

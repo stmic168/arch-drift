@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -31,10 +32,13 @@ const (
 const usage = `usage:
   archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock] [--config <json>]
   archdrift baseline --repo <path> --doc <design.md> [same flags as check]
+  archdrift scan --repo <path> [--config <json>] [--json]
   archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--config <json>]
 
 check  compares code with the doc and writes <out>/report.md and report.json.
 lock   extracts the doc model once and writes a lock file to review and commit.
+scan   prints the code model (components, deployables, import edges) without
+       reading any doc; use it to write or check archdrift.json.
 baseline  accepts every current failing finding into archdrift.baseline.json
        (existing reasons are kept; new entries need a reason before committing).
        While the doc is unchanged, check reads the lock and never calls the API.
@@ -69,9 +73,12 @@ func main() {
 // run executes the CLI. newExtractor, when non-nil, replaces the live API
 // extractor (used by tests).
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtractor func(model string) docmodel.Extractor) int {
-	if len(args) == 0 || (args[0] != "check" && args[0] != "lock" && args[0] != "baseline") {
+	if len(args) == 0 || (args[0] != "check" && args[0] != "lock" && args[0] != "baseline" && args[0] != "scan") {
 		fmt.Fprint(stderr, usage)
 		return exitError
+	}
+	if args[0] == "scan" {
+		return runScan(args[1:], stdout, stderr)
 	}
 	cmd := args[0]
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
@@ -331,6 +338,58 @@ func runBaseline(ctx context.Context, o options, apiExtractor func() docmodel.Ex
 	fmt.Fprintf(stdout, "archdrift: wrote %s: %d accepted finding(s) (%d kept, %d new)\n", p, len(bl.Accepted), kept, added)
 	if added > 0 {
 		fmt.Fprintf(stdout, "Replace each %q with the real reason and adjust \"expires\" (default %d days) before committing.\n", drift.TodoReason, baselineDays)
+	}
+	return exitOK
+}
+
+func runScan(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() { fmt.Fprint(stderr, usage) }
+	var o options
+	asJSON := fs.Bool("json", false, "")
+	fs.StringVar(&o.repo, "repo", "", "")
+	fs.StringVar(&o.config, "config", "", "")
+	if err := fs.Parse(args); err != nil {
+		return exitError
+	}
+	if o.repo == "" || fs.NArg() > 0 {
+		fs.Usage()
+		return exitError
+	}
+	if err := resolveConfig(&o); err != nil {
+		fmt.Fprintf(stderr, "archdrift: %v\n", err)
+		return exitError
+	}
+	m, err := codemodel.Scan(o.repo, o.scan)
+	if err != nil {
+		fmt.Fprintf(stderr, "archdrift: scan repo: %v\n", err)
+		return exitError
+	}
+	if *asJSON {
+		b, _ := json.MarshalIndent(m, "", "  ")
+		stdout.Write(append(b, '\n'))
+		return exitOK
+	}
+	if o.configPath != "" {
+		fmt.Fprintf(stdout, "config: %s\n", o.configPath)
+	}
+	fmt.Fprintf(stdout, "module %s: %d components, %d import edges\n\n", m.Module, len(m.Components), len(m.Edges))
+	out, in := map[string]int{}, map[string]int{}
+	for _, e := range m.Edges {
+		out[e.From]++
+		in[e.To]++
+	}
+	fmt.Fprintf(stdout, "%-32s %-10s %8s %6s %6s\n", "COMPONENT", "KIND", "PACKAGES", "OUT", "IN")
+	for _, c := range m.Components {
+		kind := "library"
+		switch {
+		case c.External:
+			kind = "external"
+		case c.Deployable:
+			kind = "deployable"
+		}
+		fmt.Fprintf(stdout, "%-32s %-10s %8d %6d %6d\n", c.ID, kind, len(c.Packages), out[c.ID], in[c.ID])
 	}
 	return exitOK
 }

@@ -277,7 +277,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				}
 			}
 		}
-		var evidence []codemodel.Location
+		evidence := []codemodel.Location{} // never null in report.json
 		for _, e := range hits {
 			evidence = append(evidence, e.Evidence...)
 		}

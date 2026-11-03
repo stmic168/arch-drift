@@ -30,7 +30,7 @@ func (l Location) String() string { return fmt.Sprintf("%s:%d", l.File, l.Line) 
 type Component struct {
 	ID         string   `json:"id"`
 	External   bool     `json:"external,omitempty"`
-	Deployable bool     `json:"deployable,omitempty"` // contains a main package
+	Deployable bool     `json:"deployable,omitempty"` // a main package sits at the component's root directory
 	Packages   []string `json:"packages,omitempty"`   // repo-relative package dirs rolled up into this component
 	Anchor     Location `json:"anchor"`               // first file (package clause) or first import site for ext
 }
@@ -119,21 +119,32 @@ func (o Options) externalID(importPath string) string {
 
 // componentOf applies configured rules (longest path wins), then the default layout.
 func (o Options) componentOf(dir string) string {
+	id, _ := o.component(dir)
+	return id
+}
+
+// component also returns the root directory of the matched rule (the
+// configured path, or cmd/x for the default layout).
+func (o Options) component(dir string) (id, root string) {
 	if o.excluded(dir) {
-		return ""
+		return "", ""
 	}
-	best, bestLen := "", -1
+	bestLen := -1
 	for _, r := range o.Components {
 		for _, p := range r.Paths {
-			if underPath(dir, p) && len(strings.Trim(p, "/")) > bestLen {
-				best, bestLen = r.ID, len(strings.Trim(p, "/"))
+			p = strings.Trim(p, "/")
+			if underPath(dir, p) && len(p) > bestLen {
+				id, root, bestLen = r.ID, p, len(p)
 			}
 		}
 	}
-	if best != "" || o.NoDefaultLayout {
-		return best
+	if id != "" || o.NoDefaultLayout {
+		return id, root
 	}
-	return ComponentOf(dir)
+	if id = ComponentOf(dir); id != "" {
+		return id, id
+	}
+	return "", ""
 }
 
 func (o Options) excluded(dir string) bool {
@@ -236,7 +247,7 @@ func Scan(repo string, opts Options) (*Model, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		dir := path.Dir(rel)
-		from := opts.componentOf(dir)
+		from, root := opts.component(dir)
 		if from == "" {
 			return nil
 		}
@@ -245,7 +256,9 @@ func Scan(repo string, opts Options) (*Model, error) {
 			return fmt.Errorf("parse %s: %w", rel, err)
 		}
 		c := addComp(from, false, Location{File: rel, Line: fset.Position(f.Package).Line})
-		if f.Name.Name == "main" {
+		// Only a main package at the component root makes it a deployable; a
+		// helper tool nested deeper (e.g. a replay tester) does not.
+		if f.Name.Name == "main" && dir == root {
 			c.Deployable = true
 		}
 		if !pkgSeen[from][dir] {

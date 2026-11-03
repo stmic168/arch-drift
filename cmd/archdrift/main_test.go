@@ -451,3 +451,12 @@ func TestBaselineWorkflow(t *testing.T) {
 		t.Fatalf("after expiry: exit %d", code)
 	}
 }
+
+func TestReportJSONHasNoNullEvidence(t *testing.T) {
+	out := t.TempDir()
+	runFixture(t, out)
+	b, _ := os.ReadFile(filepath.Join(out, "report.json"))
+	if bytes.Contains(b, []byte(`"code_evidence": null`)) {
+		t.Fatal("code_evidence must be [] not null")
+	}
+}

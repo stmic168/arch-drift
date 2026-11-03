@@ -1,0 +1,115 @@
+# Pilot archdrift on a public Go repository: shallow-clone it, extract and lock
+# the doc model with the real API, run check, and print everything to the log.
+# Manual only (it costs API tokens). Needs the repository secret ANTHROPIC_API_KEY.
+# Only the doc text and component IDs are sent to the API, never source code.
+name: pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Public GitHub repository (owner/name)
+        required: true
+      ref:
+        description: Branch or tag to check out (empty = default branch)
+        required: false
+        default: ""
+      doc:
+        description: Path of the design doc inside that repository
+        required: true
+      config:
+        description: Optional archdrift config in this repository (e.g. pilot/temporal.json)
+        required: false
+        default: ""
+      model:
+        description: Claude model for doc extraction
+        required: false
+        default: claude-sonnet-5-5
+
+permissions:
+  contents: read
+
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      REPO: ${{ inputs.repo }}
+      REF: ${{ inputs.ref }}
+      DOC: ${{ inputs.doc }}
+      CONFIG: ${{ inputs.config }}
+      MODEL: ${{ inputs.model }}
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Repository secret ANTHROPIC_API_KEY is not set."; exit 1
+          fi
+          [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::repo must be owner/name"; exit 1; }
+          [[ -z "$REF" || "$REF" =~ ^[A-Za-z0-9_./-]+$ ]] || { echo "::error::invalid ref"; exit 1; }
+          [[ "$DOC" != /* && "$DOC" != *..* ]] || { echo "::error::doc must be a relative path inside the repo"; exit 1; }
+          [[ -z "$CONFIG" || ( "$CONFIG" == pilot/*.json && "$CONFIG" != *..* ) ]] || { echo "::error::config must be pilot/<name>.json"; exit 1; }
+
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build -o archdrift ./cmd/archdrift
+
+      - name: Clone target
+        run: |
+          if [ -n "$REF" ]; then
+            git clone --depth 1 --branch "$REF" "https://github.com/$REPO" target
+          else
+            git clone --depth 1 "https://github.com/$REPO" target
+          fi
+          echo "target: $REPO @ $(git -C target rev-parse HEAD)"
+          test -f "target/$DOC" || { echo "::error::doc not found: $DOC"; exit 1; }
+
+      - name: Scan
+        run: |
+          mkdir -p out
+          args=(--repo target); [ -n "$CONFIG" ] && args+=(--config "$CONFIG")
+          ./archdrift scan "${args[@]}" | tee out/scan.txt
+
+      - name: Lock (calls the API once)
+        run: |
+          args=(--repo target --doc "target/$DOC" --lock out/doc.lock.json --out out --model "$MODEL")
+          [ -n "$CONFIG" ] && args+=(--config "$CONFIG")
+          ./archdrift lock "${args[@]}" | tee out/lock-review.txt
+
+      - name: Check (reads the lock, no API call)
+        run: |
+          args=(--repo target --doc "target/$DOC" --lock out/doc.lock.json --out out)
+          [ -n "$CONFIG" ] && args+=(--config "$CONFIG")
+          set +e
+          ./archdrift check "${args[@]}"
+          code=$?
+          set -e
+          echo "exit code: $code"
+          test "$code" -ne 2
+
+      - name: Print findings
+        run: |
+          jq '{summary, usage: (.usage | {source, model, input_tokens, output_tokens}),
+               findings: [.findings[] | {type, severity, subject, from, to, protocol, via, message,
+                 code: [(.code_evidence // [])[] | "\(.file):\(.line)"], doc_quote}],
+               dropped_claims}' out/report.json
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Pilot: \`$REPO\` (\`$DOC\`)"
+            echo
+            if [ -f out/lock-review.txt ]; then echo '```'; cat out/lock-review.txt; echo '```'; fi
+            if [ -f out/report.md ]; then cat out/report.md; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: archdrift-pilot
+          path: out/
+          if-no-files-found: ignore

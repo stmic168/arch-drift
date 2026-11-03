@@ -139,6 +139,7 @@ func TestScanWithOptions(t *testing.T) {
 		"libs/money/money.go":             "package money\n\nimport _ \"example.com/mono/gen/pb\"\n",
 		"gen/pb/pb.go":                    "package pb\n",
 		"internal/old/old.go":             "package old\n",
+		"libs/money/tool/main.go":         "package main\n\nfunc main() {}\n",
 	})
 	opts := Options{
 		Components: []ComponentRule{{ID: "billing", Paths: []string{"services/billing"}}, {ID: "money", Paths: []string{"libs/money"}}},
@@ -153,7 +154,7 @@ func TestScanWithOptions(t *testing.T) {
 		t.Fatalf("IDs = %v, want %v", got, want)
 	}
 	if !m.IsDeployable("billing") || m.IsDeployable("money") {
-		t.Error("deployable must come from package main")
+		t.Error("deployable must come from a main package at the component root, not a nested tool")
 	}
 	for _, e := range [][2]string{{"billing", "ext:s3"}, {"billing", "money"}} {
 		if _, ok := m.Edge(e[0], e[1]); !ok {
