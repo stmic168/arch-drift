@@ -47,6 +47,30 @@ type Model struct {
 	Module     string      `json:"module"`
 	Components []Component `json:"components"`
 	Edges      []Edge      `json:"edges"`
+	Coverage   Coverage    `json:"coverage"`
+}
+
+// Coverage says how much of the repo the components cover. Excluded
+// directories are not counted.
+type Coverage struct {
+	Packages  int        `json:"packages"`  // Go packages scanned (non-test)
+	Modeled   int        `json:"modeled"`   // packages that belong to a component
+	Shared    []string   `json:"shared"`    // shared packages: no component, no edges
+	Unmodeled []DirCount `json:"unmodeled"` // packages in no component, by top-level directory
+}
+
+// DirCount is a package count for a top-level directory.
+type DirCount struct {
+	Dir      string `json:"dir"`
+	Packages int    `json:"packages"`
+}
+
+// Percent is the share of packages that belong to a component.
+func (c Coverage) Percent() int {
+	if c.Packages == 0 {
+		return 100
+	}
+	return c.Modeled * 100 / c.Packages
 }
 
 // externalCatalog maps import-path prefixes to external component IDs.
@@ -60,6 +84,25 @@ var externalCatalog = []struct{ prefix, id string }{
 	{"github.com/IBM/sarama", "ext:kafka"},
 	{"github.com/Shopify/sarama", "ext:kafka"},
 	{"google.golang.org/grpc", "ext:grpc"},
+	{"github.com/gocql/gocql", "ext:cassandra"},
+	{"github.com/apache/cassandra-gocql-driver", "ext:cassandra"},
+	{"github.com/go-sql-driver/mysql", "ext:mysql"},
+	{"modernc.org/sqlite", "ext:sqlite"},
+	{"github.com/mattn/go-sqlite3", "ext:sqlite"},
+	{"github.com/elastic/go-elasticsearch", "ext:elasticsearch"},
+	{"github.com/olivere/elastic", "ext:elasticsearch"},
+	{"github.com/thanos-io/objstore", "ext:objstore"},
+	{"github.com/aws/aws-sdk-go-v2/service/s3", "ext:s3"},
+	{"github.com/aws/aws-sdk-go/service/s3", "ext:s3"},
+	{"github.com/minio/minio-go", "ext:s3"},
+	{"cloud.google.com/go/storage", "ext:gcs"},
+	{"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob", "ext:azure-blob"},
+	{"github.com/nats-io/nats.go", "ext:nats"},
+	{"github.com/rabbitmq/amqp091-go", "ext:rabbitmq"},
+	{"github.com/streadway/amqp", "ext:rabbitmq"},
+	{"go.etcd.io/etcd/client", "ext:etcd"},
+	{"github.com/hashicorp/consul/api", "ext:consul"},
+	{"github.com/bradfitz/gomemcache", "ext:memcached"},
 }
 
 // ComponentRule maps repo-relative directories to a component ID.
@@ -80,6 +123,35 @@ type Options struct {
 	External        []ExternalRule
 	Exclude         []string // repo-relative directories to skip
 	NoDefaultLayout bool     // only configured components; no cmd/internal/pkg rule
+	// Shared lists directories of shared code (protocol types, small helpers)
+	// that live inside a component directory. They belong to no component and
+	// importing them creates no edge.
+	Shared []string
+	// NoSharedProtocol disables the default rule that treats generated
+	// protobuf packages (directory name ending in "pb", e.g. storepb) as shared.
+	NoSharedProtocol bool
+}
+
+// IsShared reports whether a repo-relative directory holds shared code.
+func (o Options) IsShared(dir string) bool {
+	for _, p := range o.Shared {
+		if underPath(dir, p) {
+			return true
+		}
+	}
+	if o.NoSharedProtocol {
+		return false
+	}
+	base := path.Base(dir)
+	if len(base) <= 2 || !strings.HasSuffix(base, "pb") {
+		return false
+	}
+	for _, r := range base {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func underPath(dir, p string) bool {
@@ -126,7 +198,7 @@ func (o Options) componentOf(dir string) string {
 // component also returns the root directory of the matched rule (the
 // configured path, or cmd/x for the default layout).
 func (o Options) component(dir string) (id, root string) {
-	if o.excluded(dir) {
+	if o.excluded(dir) || o.IsShared(dir) {
 		return "", ""
 	}
 	bestLen := -1
@@ -208,6 +280,9 @@ func Scan(repo string, opts Options) (*Model, error) {
 	comps := map[string]*Component{}
 	pkgSeen := map[string]map[string]bool{}
 	edges := map[[2]string]map[Location]bool{}
+	pkgDirs := map[string]bool{}     // every scanned package dir
+	modeledDirs := map[string]bool{} // dirs that belong to a component
+	sharedDirs := map[string]bool{}
 
 	addComp := func(id string, ext bool, anchor Location) *Component {
 		c, ok := comps[id]
@@ -247,10 +322,15 @@ func Scan(repo string, opts Options) (*Model, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		dir := path.Dir(rel)
+		pkgDirs[dir] = true
 		from, root := opts.component(dir)
 		if from == "" {
+			if opts.IsShared(dir) {
+				sharedDirs[dir] = true
+			}
 			return nil
 		}
+		modeledDirs[dir] = true
 		f, err := parser.ParseFile(fset, p, nil, parser.ImportsOnly)
 		if err != nil {
 			return fmt.Errorf("parse %s: %w", rel, err)
@@ -294,6 +374,33 @@ func Scan(repo string, opts Options) (*Model, error) {
 	}
 
 	m := &Model{Module: module}
+	m.Coverage = Coverage{Packages: len(pkgDirs), Modeled: len(modeledDirs), Shared: []string{}, Unmodeled: []DirCount{}}
+	byTop := map[string]int{}
+	for d := range pkgDirs {
+		if modeledDirs[d] {
+			continue
+		}
+		if sharedDirs[d] {
+			m.Coverage.Shared = append(m.Coverage.Shared, d)
+			continue
+		}
+		top := strings.SplitN(d, "/", 2)[0]
+		if top == "." {
+			top = "(repo root)"
+		}
+		byTop[top]++
+	}
+	sort.Strings(m.Coverage.Shared)
+	for d, n := range byTop {
+		m.Coverage.Unmodeled = append(m.Coverage.Unmodeled, DirCount{Dir: d, Packages: n})
+	}
+	sort.Slice(m.Coverage.Unmodeled, func(i, j int) bool {
+		a, b := m.Coverage.Unmodeled[i], m.Coverage.Unmodeled[j]
+		if a.Packages != b.Packages {
+			return a.Packages > b.Packages
+		}
+		return a.Dir < b.Dir
+	})
 	for _, c := range comps {
 		sort.Strings(c.Packages)
 		m.Components = append(m.Components, *c)

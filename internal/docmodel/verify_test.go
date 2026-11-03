@@ -2,6 +2,7 @@ package docmodel
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -32,7 +33,7 @@ func TestVerifyDropsFakeQuotesAndUnknownIDs(t *testing.T) {
 			{From: "API", To: "Store", Kind: "maybe", Quote: "The API must never access the Store directly."},
 		},
 	}
-	out, dropped := Verify(in, doc, ids)
+	out, dropped := Verify(in, []Doc{{Path: "design.md", Text: doc}}, ids)
 
 	wantComps := []Component{
 		{Name: "API", CodeIDs: []string{"cmd/api"}, Quote: "The **API** serves HTTP traffic."},
@@ -66,5 +67,27 @@ func TestVerifyDropsFakeQuotesAndUnknownIDs(t *testing.T) {
 func TestNormalizeSpace(t *testing.T) {
 	if got := NormalizeSpace("  a \n\t b  c d "); got != "a b c d" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestVerifyMultipleDocsRecordsSource(t *testing.T) {
+	docs := []Doc{{Path: "docs/a.md", Text: "The API serves HTTP."}, {Path: "docs/b.md", Text: "The Store owns the DB.\nThe API uses the Store."}}
+	in := &Model{
+		Components: []Component{{Name: "API", CodeIDs: []string{"cmd/api"}, Quote: "The API serves HTTP."}, {Name: "Store", CodeIDs: []string{"internal/store"}, Quote: "The Store owns the DB."}},
+		Relations:  []Relation{{From: "API", To: "Store", Kind: KindRequired, Quote: "The API uses the Store."}, {From: "API", To: "Store", Kind: KindForbidden, Quote: "The API serves HTTP. The Store owns the DB."}},
+	}
+	out, dropped := Verify(in, docs, ids)
+	if out.Components[0].Source != "docs/a.md" || out.Components[1].Source != "docs/b.md" || out.Relations[0].Source != "docs/b.md" {
+		t.Errorf("sources: %+v %+v", out.Components, out.Relations)
+	}
+	// A quote spanning two files is not verbatim in either.
+	if len(dropped) != 1 || dropped[0].Claim != "relation" {
+		t.Errorf("dropped = %+v", dropped)
+	}
+	if got := Combine(docs[:1]); got != docs[0].Text {
+		t.Errorf("single doc must pass through unchanged: %q", got)
+	}
+	if got := Combine(docs); !strings.Contains(got, "<!-- archdrift file: docs/b.md -->") {
+		t.Errorf("combined: %q", got)
 	}
 }

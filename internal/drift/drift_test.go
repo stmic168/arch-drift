@@ -40,6 +40,7 @@ func TestDiffFindingTypes(t *testing.T) {
 		edges     []codemodel.Edge
 		docComps  []docmodel.Component
 		relations []docmodel.Relation
+		opts      Options
 		wantType  string // "" means no findings
 		wantSev   string
 		wantFail  bool
@@ -79,9 +80,36 @@ func TestDiffFindingTypes(t *testing.T) {
 			wantType: UndocumentedEdge, wantSev: Low, wantFail: true, wantCode: "internal/a/x.go:4",
 		},
 		{
-			name:  "undocumented component",
+			name:  "undocumented component is listed but does not fail by default",
 			comps: append(append([]codemodel.Component{}, base...), comp("pkg/metrics")), docComps: baseDoc,
+			wantType: UndocumentedComponent, wantSev: Info, wantFail: false, wantCode: "pkg/metrics/x.go:1",
+		},
+		{
+			name:  "undocumented component fails when configured",
+			comps: append(append([]codemodel.Component{}, base...), comp("pkg/metrics")), docComps: baseDoc,
+			opts:     Options{FailUndocumentedComponents: true},
 			wantType: UndocumentedComponent, wantSev: Low, wantFail: true, wantCode: "pkg/metrics/x.go:1",
+		},
+		{
+			name:  "ignored undocumented component",
+			comps: append(append([]codemodel.Component{}, base...), comp("pkg/extprom")), docComps: baseDoc,
+			opts: Options{IgnoreUndocumented: []string{"pkg/ext*"}},
+		},
+		{
+			name:  "external actor without code is not missing",
+			comps: base, docComps: append(append([]docmodel.Component{}, baseDoc...), docmodel.Component{Name: "Users", CodeIDs: []string{}, Quote: "Users quote", External: true}),
+		},
+		{
+			name:  "relation to an external actor is unverifiable",
+			comps: base, docComps: append(append([]docmodel.Component{}, baseDoc...), docmodel.Component{Name: "Users", CodeIDs: []string{}, Quote: "Users quote", External: true}),
+			relations: []docmodel.Relation{rel("Users", "API", docmodel.KindRequired, "HTTP")},
+			wantType:  Unverifiable, wantSev: Info, wantFail: false, wantQuote: "Users required API",
+		},
+		{
+			name:  "network relation between libraries without an import is unverifiable",
+			comps: base, docComps: baseDoc,
+			relations: []docmodel.Relation{rel("A", "B", docmodel.KindRequired, "gRPC")},
+			wantType:  Unverifiable, wantSev: Info, wantFail: false, wantQuote: "A required B",
 		},
 		{
 			name:  "unverifiable runtime relation between deployables",
@@ -104,7 +132,7 @@ func TestDiffFindingTypes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			code := &codemodel.Model{Components: tc.comps, Edges: tc.edges}
-			res := Diff(code, &docmodel.Model{Components: tc.docComps, Relations: tc.relations}, Options{})
+			res := Diff(code, &docmodel.Model{Components: tc.docComps, Relations: tc.relations}, tc.opts)
 			if tc.wantType == "" {
 				if len(res.Findings) != 0 || res.Failing() {
 					t.Fatalf("want no findings, got %+v", res.Findings)
@@ -189,5 +217,39 @@ func TestDeployableComesFromModel(t *testing.T) {
 	res := Diff(code, doc, Options{})
 	if len(res.Findings) != 1 || res.Findings[0].Type != Unverifiable {
 		t.Fatalf("want UNVERIFIABLE, got %+v", res.Findings)
+	}
+}
+
+func TestMissingEndpointRelationIsUnverifiable(t *testing.T) {
+	code := &codemodel.Model{Components: []codemodel.Component{comp("cmd/api")}}
+	doc := &docmodel.Model{Components: []docmodel.Component{dc("API", "cmd/api"), dc("Notifier")},
+		Relations: []docmodel.Relation{rel("API", "Notifier", docmodel.KindRequired, "HTTP")}}
+	res := Diff(code, doc, Options{})
+	var types []string
+	for _, f := range res.Findings {
+		types = append(types, f.Type+" "+f.Subject+" "+f.Message)
+	}
+	want := []string{
+		"MISSING_COMPONENT Notifier Doc component \"Notifier\" has no matching package in code.",
+		"UNVERIFIABLE API -> Notifier Not checked: Notifier has no code in this repo.",
+	}
+	if !reflect.DeepEqual(types, want) {
+		t.Fatalf("got %q", types)
+	}
+}
+
+func TestUndocumentedComponentsRankedByImporters(t *testing.T) {
+	code := &codemodel.Model{
+		Components: []codemodel.Component{comp("cmd/api"), comp("internal/a"), comp("pkg/big"), comp("pkg/small"), comp("pkg/used")},
+		Edges:      []codemodel.Edge{edge("cmd/api", "pkg/used", 1), edge("internal/a", "pkg/used", 2)},
+	}
+	code.Components[2].Packages = []string{"pkg/big", "pkg/big/x", "pkg/big/y"}
+	doc := &docmodel.Model{Components: []docmodel.Component{dc("API", "cmd/api"), dc("A", "internal/a")}}
+	var got []string
+	for _, f := range Diff(code, doc, Options{}).Findings {
+		got = append(got, f.Subject)
+	}
+	if want := []string{"pkg/used", "pkg/big", "pkg/small"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
 	}
 }

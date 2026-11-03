@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Relation kinds.
@@ -22,6 +23,12 @@ type Component struct {
 	Name    string   `json:"name"`
 	CodeIDs []string `json:"code_ids"`
 	Quote   string   `json:"quote"`
+	// External marks something the doc places outside this codebase (users,
+	// client apps, third-party or managed systems). With no code IDs it is
+	// not reported as MISSING_COMPONENT.
+	External bool `json:"external,omitempty"`
+	// Source is the doc file holding the quote, set by Verify when there are several docs.
+	Source string `json:"source,omitempty"`
 }
 
 // Relation is a doc-declared dependency between two doc components (by name).
@@ -31,6 +38,27 @@ type Relation struct {
 	Kind     string `json:"kind"`
 	Protocol string `json:"protocol"`
 	Quote    string `json:"quote"`
+	Source   string `json:"source,omitempty"` // see Component.Source
+}
+
+// Doc is one design document file.
+type Doc struct {
+	Path string
+	Text string
+}
+
+// Combine renders the docs as the single text the extractor reads, hashes
+// and caches. One doc is passed through unchanged, so single-doc locks and
+// caches stay valid; several docs are separated by file markers.
+func Combine(docs []Doc) string {
+	if len(docs) == 1 {
+		return docs[0].Text
+	}
+	var b strings.Builder
+	for _, d := range docs {
+		fmt.Fprintf(&b, "<!-- archdrift file: %s -->\n%s\n<!-- archdrift end of file: %s -->\n\n", d.Path, d.Text, d.Path)
+	}
+	return b.String()
 }
 
 // Model is the structured output of the extractor.

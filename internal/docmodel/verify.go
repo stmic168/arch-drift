@@ -33,19 +33,36 @@ func NormalizeSpace(s string) string {
 	return b.String()
 }
 
-// Verify keeps only claims backed by a verbatim quote from doc (after
-// whitespace normalization) and code IDs that exist in ids. Everything
-// removed is returned as Dropped, in deterministic order.
-func Verify(m *Model, doc string, ids []string) (*Model, []Dropped) {
-	normDoc := NormalizeSpace(doc)
+// Verify keeps only claims backed by a verbatim quote from one of the docs
+// (after whitespace normalization) and code IDs that exist in ids. Everything
+// removed is returned as Dropped, in deterministic order. With several docs,
+// kept claims record the file their quote came from.
+func Verify(m *Model, docs []Doc, ids []string) (*Model, []Dropped) {
+	norm := make([]string, len(docs))
+	for i, d := range docs {
+		norm[i] = NormalizeSpace(d.Text)
+	}
 	known := map[string]bool{}
 	for _, id := range ids {
 		known[id] = true
 	}
-	quoteOK := func(q string) bool {
+	// source returns the file holding the quote ("" for a single doc) and whether it was found.
+	source := func(q string) (string, bool) {
 		nq := NormalizeSpace(q)
-		return nq != "" && strings.Contains(normDoc, nq)
+		if nq == "" {
+			return "", false
+		}
+		for i, n := range norm {
+			if strings.Contains(n, nq) {
+				if len(docs) == 1 {
+					return "", true
+				}
+				return docs[i].Path, true
+			}
+		}
+		return "", false
 	}
+	quoteOK := func(q string) bool { _, ok := source(q); return ok }
 
 	out := &Model{Components: []Component{}, Relations: []Relation{}}
 	var dropped []Dropped
@@ -64,7 +81,8 @@ func Verify(m *Model, doc string, ids []string) (*Model, []Dropped) {
 			dropped = append(dropped, Dropped{Claim: "component", Name: name, Quote: c.Quote, Reason: "duplicate component name"})
 			continue
 		}
-		kept := Component{Name: name, Quote: c.Quote, CodeIDs: []string{}}
+		src, _ := source(c.Quote)
+		kept := Component{Name: name, Quote: c.Quote, CodeIDs: []string{}, External: c.External, Source: src}
 		seen := map[string]bool{}
 		for _, id := range c.CodeIDs {
 			if !known[id] {
@@ -100,7 +118,8 @@ func Verify(m *Model, doc string, ids []string) (*Model, []Dropped) {
 			dropped = append(dropped, d)
 			continue
 		}
-		out.Relations = append(out.Relations, Relation{From: from, To: to, Kind: r.Kind, Protocol: strings.TrimSpace(r.Protocol), Quote: r.Quote})
+		src, _ := source(r.Quote)
+		out.Relations = append(out.Relations, Relation{From: from, To: to, Kind: r.Kind, Protocol: strings.TrimSpace(r.Protocol), Quote: r.Quote, Source: src})
 	}
 
 	sort.SliceStable(out.Components, func(i, j int) bool { return out.Components[i].Name < out.Components[j].Name })

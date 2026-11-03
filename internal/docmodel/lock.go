@@ -29,7 +29,7 @@ type Lock struct {
 }
 
 // ErrStaleLock means the doc changed since the lock was written.
-var ErrStaleLock = errors.New("lock file is stale: the design doc changed since it was written; run `archdrift lock` and review the result")
+var ErrStaleLock = errors.New("lock file is stale: the design doc (or the set of doc files) changed since it was written; run `archdrift lock` and review the result")
 
 // DocHash is the hash stored in a lock.
 func DocHash(doc string) string {

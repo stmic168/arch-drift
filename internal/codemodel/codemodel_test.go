@@ -171,3 +171,44 @@ func TestScanWithOptions(t *testing.T) {
 		t.Error("NoDefaultLayout must drop internal/old")
 	}
 }
+
+func TestSharedPackagesAndCoverage(t *testing.T) {
+	repo := writeRepo(t, map[string]string{
+		"go.mod":                         "module example.com/x\n",
+		"cmd/api/main.go":                "package main\n\nimport (\n\t_ \"example.com/x/pkg/store/storepb\"\n\t_ \"example.com/x/pkg/query/stats\"\n\t_ \"example.com/x/pkg/query\"\n)\n\nfunc main() {}\n",
+		"pkg/store/store.go":             "package store\n",
+		"pkg/store/storepb/types.pb.go":  "package storepb\n",
+		"pkg/query/query.go":             "package query\n",
+		"pkg/query/stats/stats.go":       "package stats\n",
+		"service/history/history.go":     "package history\n",
+		"service/history/shard/shard.go": "package shard\n",
+		"service/matching/matching.go":   "package matching\n",
+	})
+	m, err := Scan(repo, Options{Shared: []string{"pkg/query/stats"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// storepb (protocol rule) and query/stats (configured) create no edges.
+	if len(m.Edges) != 1 || m.Edges[0].To != "pkg/query" {
+		t.Fatalf("edges = %+v, want only cmd/api -> pkg/query", m.Edges)
+	}
+	want := Coverage{Packages: 8, Modeled: 3, Shared: []string{"pkg/query/stats", "pkg/store/storepb"},
+		Unmodeled: []DirCount{{Dir: "service", Packages: 3}}}
+	if !reflect.DeepEqual(m.Coverage, want) || m.Coverage.Percent() != 37 {
+		t.Fatalf("coverage = %+v (%d%%)", m.Coverage, m.Coverage.Percent())
+	}
+	// The protocol rule can be turned off.
+	m, _ = Scan(repo, Options{NoSharedProtocol: true})
+	if _, ok := m.Edge("cmd/api", "pkg/store"); !ok {
+		t.Error("with NoSharedProtocol, storepb rolls up into pkg/store again")
+	}
+}
+
+func TestIsShared(t *testing.T) {
+	o := Options{}
+	for dir, want := range map[string]bool{"pkg/store/storepb": true, "pkg/cortexpb": true, "api/v1pb": true, "pkg/pb": false, "pkg/grpc": false, "pkg/Storepb": false, "pkg/store": false} {
+		if got := o.IsShared(dir); got != want {
+			t.Errorf("IsShared(%q) = %v, want %v", dir, got, want)
+		}
+	}
+}

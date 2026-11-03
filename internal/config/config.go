@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/stmic168/arch-drift/internal/codemodel"
@@ -32,9 +33,21 @@ type Config struct {
 	} `json:"external"`
 	// Exclude lists directories to skip entirely (generated code, tools, ...).
 	Exclude []string `json:"exclude"`
+	// Shared lists directories of shared code inside component directories
+	// (protocol types, small helpers): no component, and imports of them
+	// create no edge.
+	Shared []string `json:"shared"`
+	// SharedProtocolPackages treats generated protobuf packages (directory
+	// name ending in "pb") as shared. Defaults to true.
+	SharedProtocolPackages *bool `json:"shared_protocol_packages"`
 	// DefaultLayout keeps the cmd/x, internal/x, pkg/x rule for directories no
 	// configured component matches. Defaults to true.
 	DefaultLayout *bool `json:"default_layout"`
+	// UndocumentedComponents controls UNDOCUMENTED_COMPONENT findings.
+	UndocumentedComponents struct {
+		Fail   bool     `json:"fail"`   // fail the check (default: list only)
+		Ignore []string `json:"ignore"` // component ID patterns to skip, e.g. "pkg/ext*"
+	} `json:"undocumented_components"`
 	// Transitive lets import paths through other components count.
 	Transitive struct {
 		Required  bool `json:"required"`
@@ -88,9 +101,19 @@ func (c *Config) validate() error {
 			return fmt.Errorf("external[%d] %q: no prefixes", i, e.ID)
 		}
 	}
+	for i, p := range c.UndocumentedComponents.Ignore {
+		if _, err := path.Match(p, ""); err != nil {
+			return fmt.Errorf("undocumented_components.ignore[%d]: bad pattern %q", i, p)
+		}
+	}
 	for i, p := range c.Exclude {
 		if strings.HasPrefix(p, "/") || strings.Contains(p, "..") || strings.Trim(p, "/") == "" {
 			return fmt.Errorf("exclude[%d]: path %q must be relative to the repo root", i, p)
+		}
+	}
+	for i, p := range c.Shared {
+		if strings.HasPrefix(p, "/") || strings.Contains(p, "..") || strings.Trim(p, "/") == "" {
+			return fmt.Errorf("shared[%d]: path %q must be relative to the repo root", i, p)
 		}
 	}
 	return nil
@@ -107,10 +130,17 @@ func (c *Config) ScanOptions() codemodel.Options {
 	}
 	o.Exclude = c.Exclude
 	o.NoDefaultLayout = c.DefaultLayout != nil && !*c.DefaultLayout
+	o.Shared = c.Shared
+	o.NoSharedProtocol = c.SharedProtocolPackages != nil && !*c.SharedProtocolPackages
 	return o
 }
 
 // DiffOptions converts the config for the diff.
 func (c *Config) DiffOptions() drift.Options {
-	return drift.Options{TransitiveRequired: c.Transitive.Required, TransitiveForbidden: c.Transitive.Forbidden}
+	return drift.Options{
+		TransitiveRequired:         c.Transitive.Required,
+		TransitiveForbidden:        c.Transitive.Forbidden,
+		FailUndocumentedComponents: c.UndocumentedComponents.Fail,
+		IgnoreUndocumented:         c.UndocumentedComponents.Ignore,
+	}
 }
