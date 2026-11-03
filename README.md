@@ -125,8 +125,9 @@ Optional, at the repo root (or `--config`). JSON rather than YAML because the st
 | `external` | Extra `ext:*` IDs by import-path prefix, checked before the built-in catalog (e.g. internal clients, S3, Elasticsearch). |
 | `exclude` | Directories to skip entirely (generated code, tools). |
 | `shared` | Directories of shared code inside a component directory (protocol types, small helpers such as `pkg/querier/stats`). They belong to no component and importing them creates no edge. |
-| `shared_protocol_packages` | Treat generated protobuf packages (directory name ending in `pb`, e.g. `storepb`) as shared. Default `true`. |
-| `undocumented_components.fail` | Make `UNDOCUMENTED_COMPONENT` fail the check. Default `false`: they are listed, most-imported first, but do not fail. |
+| `shared_protocol_packages` | Treat generated protobuf packages as shared: a directory name ending in `pb` (e.g. `storepb`), or a directory holding `*.pb.go` files below a component root (e.g. `api/matchingservice/v1` when `api/matchingservice` is mapped to a component). Default `true`. |
+| `undocumented_components.fail` | Make `UNDOCUMENTED_COMPONENT` fail the check. Default `false`: they are listed but do not fail, ranked application-first (components that import many others and are imported by few come first, widely imported utilities last). |
+| `undocumented_edges.fail` | Default `true`. Set `false` for overview docs that state few relations: `UNDOCUMENTED_EDGE` is then listed as info and does not fail the check, so only missing components, missing or forbidden edges fail. |
 | `undocumented_components.ignore` | Component ID patterns (`path.Match` syntax, e.g. `"pkg/ext*"`) never reported as undocumented. |
 | `default_layout` | Keep the `cmd/x`, `internal/x`, `pkg/x` rule for directories no configured component matches. Default `true`; set `false` to model only configured components. |
 | `transitive.required` | A required relation is also satisfied by an import path through other components (e.g. `api -> store -> ext:postgres` satisfies "API uses Postgres"). Each hop still needs its own doc relation, or it shows as `UNDOCUMENTED_EDGE`. |
@@ -159,7 +160,7 @@ A component is a deployable (separately run program) when a `main` package sits 
    | `github.com/hashicorp/consul/api` | `ext:consul` |
    | `github.com/bradfitz/gomemcache` | `ext:memcached` |
 
-   Generated protobuf packages (`*pb`) and configured `shared` directories create no edges. The code model also records coverage: how many Go packages belong to a component. `check` adds a note when it is under 50%, naming the largest unmodeled directories.
+   Generated protobuf packages and configured `shared` directories create no edges. An import of another component's shared package is kept as a *protocol edge*: it proves a required relation (a querier importing the frontend's gRPC client depends on the frontend) but is never an undocumented dependency. The code model also records coverage: how many Go packages belong to a component. `check` adds a note when it is under 50%, naming the largest unmodeled directories.
 
 2. **Doc model** (`internal/docmodel`). One Messages API call with structured output (`output_config.format`, JSON schema). Input: the doc (wrapped in `<design_doc>` tags and treated as untrusted data by the system prompt) plus the ID list. Output: `components[]` (`name`, `code_ids[]`, `quote`) and `relations[]` (`from`, `to`, `kind` = `required|forbidden`, `protocol`, `quote`). The LLM sits behind the `Extractor` interface; implementations are the live `AnthropicExtractor`, `FileExtractor` (`--doc-model`) and `CachedExtractor`.
    - Cache: `<out>/cache/<sha256(model, IDs, doc)>.json`. A hit costs nothing and is reported as source `cache`.
@@ -177,7 +178,7 @@ A component is a deployable (separately run program) when a `main` package sits 
    | `UNDOCUMENTED_COMPONENT` | info (low when configured to fail) | no by default | code component that no doc component maps to, ranked by how many components import it |
    | `UNVERIFIABLE` | info | no | relation that imports cannot prove or disprove: the target is a deployable (a main package cannot be imported); the protocol is a runtime transport (HTTP, gRPC, Kafka, queue, ...) and there is no import; or one endpoint has no code (missing, or external by design) |
 
-   Doc components the model marks `external` (users, SDK workers, managed services) are not reported as `MISSING_COMPONENT` when they have no code ID. Relations to `ext:*` are always checkable (the driver import is the evidence). By default only direct imports count; `transitive` in the config extends that to import paths. Edges touching an undocumented component are not reported again as `UNDOCUMENTED_EDGE`.
+   Doc components the model marks `external` (users, SDK workers, dashboards, managed services) are not reported as `MISSING_COMPONENT` when they have no code ID. Relations to `ext:*` are always checkable: the driver import is the evidence, directly or through a client wrapper (`store -> cacheutil -> memcached` satisfies "Store uses Memcached"). A required relation is also satisfied by a protocol edge. The protocol `network` (separately running nodes that talk without a named protocol) counts as a runtime transport. By default only direct imports count; `transitive` in the config extends that to import paths. Edges touching an undocumented component are not reported again as `UNDOCUMENTED_EDGE`.
 5. **Report** (`internal/report`): `report.md` (findings with evidence, coloured Mermaid diagram, dropped claims, token usage and estimated cost) and `report.json`. Output has no timestamps and is byte-identical across runs on the same inputs.
 
 ## Layout
@@ -210,6 +211,10 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 ## Pilot on public repositories
 
 `.github/workflows/pilot.yml` (manual) runs archdrift on any public Go repository: it shallow-clones the repo, prints `scan`, runs `lock` (one API call; only the doc and component IDs are sent), runs `check` from that lock, and prints the doc mapping and every finding to the log and job summary. Inputs: `repo` (owner/name), optional `ref`, `doc` (path in that repo; comma-separated for several files), optional `config` (a file under `pilot/` in this repo) and `model`. The log also prints the lock JSON, so a run can be replayed offline against the same mapping. Configs for pilot targets live in `pilot/` (e.g. `pilot/temporal.json`).
+
+### Offline evaluation
+
+`pilot/eval/` replays the pilot runs from their recorded locks without calling the API and scores failing findings against hand-graded labels, so rule changes can be measured: `pilot/eval/run.sh <archdrift binary> <work dir>`. See `pilot/eval/README.md`.
 
 ## Limitations
 
