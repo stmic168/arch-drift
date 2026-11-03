@@ -184,12 +184,18 @@ func TestTransitive(t *testing.T) {
 	base := []docmodel.Relation{rel("API", "A", docmodel.KindRequired, ""), rel("A", "B", docmodel.KindRequired, ""), rel("B", "PG", docmodel.KindRequired, "")}
 	code := &codemodel.Model{Components: comps, Edges: edges}
 
-	// Required API -> PG: missing when only direct imports count, satisfied transitively.
+	// Required API -> PG: an external target is always reached through a
+	// client wrapper, so an import path satisfies it even by default.
 	req := &docmodel.Model{Components: docComps, Relations: append(append([]docmodel.Relation{}, base...), rel("API", "PG", docmodel.KindRequired, "SQL"))}
-	if res := Diff(code, req, Options{}); len(res.Findings) != 1 || res.Findings[0].Type != MissingEdge {
+	if res := Diff(code, req, Options{}); len(res.Findings) != 0 {
+		t.Fatalf("external target via path: %+v", res.Findings)
+	}
+	// Required API -> B (internal): missing when only direct imports count, satisfied transitively.
+	reqB := &docmodel.Model{Components: docComps, Relations: append(append([]docmodel.Relation{}, base...), rel("API", "B", docmodel.KindRequired, ""))}
+	if res := Diff(code, reqB, Options{}); len(res.Findings) != 1 || res.Findings[0].Type != MissingEdge {
 		t.Fatalf("direct only: %+v", res.Findings)
 	}
-	if res := Diff(code, req, Options{TransitiveRequired: true}); len(res.Findings) != 0 {
+	if res := Diff(code, reqB, Options{TransitiveRequired: true}); len(res.Findings) != 0 {
 		t.Fatalf("transitive required: %+v", res.Findings)
 	}
 

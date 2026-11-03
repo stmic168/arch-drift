@@ -398,7 +398,10 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				addGraph(e.From, e.To, EdgeOK, "via protocol package")
 				continue
 			}
-			if opts.TransitiveRequired {
+			// External systems are usually reached through a client wrapper
+			// (store -> cacheutil -> memcached, ha -> ring/kv -> consul), so an
+			// import path is enough for them even without transitive.required.
+			if opts.TransitiveRequired || allOf(tc.CodeIDs, isExternal) {
 				if chain := importPath(code, fc.CodeIDs, tc.CodeIDs); chain != nil {
 					_, via := chainEvidence(chain)
 					addGraph(chain[0].From, chain[len(chain)-1].To, EdgeOK, "via "+strings.Join(via[1:len(via)-1], ", "))
