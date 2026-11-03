@@ -1,0 +1,112 @@
+name: archdrift
+description: Check a Go repository against its design doc and report architecture drift, with file:line and doc-quote evidence.
+author: stmic168
+branding:
+  icon: layers
+  color: blue
+
+inputs:
+  docs:
+    description: Design doc path(s), comma- or newline-separated, relative to the workspace.
+    required: true
+  repo-path:
+    description: Go repository root (directory with go.mod), relative to the workspace.
+    default: "."
+  config:
+    description: archdrift.json path (default archdrift.json in repo-path, if present).
+    default: ""
+  lock:
+    description: Lock file path (default next to the first doc, design.md -> design.lock.json). With a committed lock no API key is needed.
+    default: ""
+  base:
+    description: Git revision to compare with; only drift introduced or worsened since then fails. Defaults to the pull request base on pull_request events. Set to "none" to check everything.
+    default: ""
+  model:
+    description: Claude model for doc extraction (only used without a lock).
+    default: claude-sonnet-5-5
+  anthropic-api-key:
+    description: Anthropic API key, only needed when there is no lock for the doc.
+    default: ""
+  out:
+    description: Output directory for report.md, report.json and report.sarif, relative to the workspace.
+    default: archdrift-out
+  upload-sarif:
+    description: Upload report.sarif to GitHub code scanning (needs permission security-events write).
+    default: "false"
+  fail-on-drift:
+    description: Fail the step when drift is found (exit code 1).
+    default: "true"
+
+outputs:
+  exit-code:
+    description: 0 no drift, 1 drift, 2 error.
+    value: ${{ steps.check.outputs.exit-code }}
+  report:
+    description: Path of report.md.
+    value: ${{ inputs.out }}/report.md
+  sarif:
+    description: Path of report.sarif.
+    value: ${{ inputs.out }}/report.sarif
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+
+    - name: Build archdrift
+      shell: bash
+      run: cd "$GITHUB_ACTION_PATH" && go build -o "$RUNNER_TEMP/archdrift" ./cmd/archdrift
+
+    - name: Check
+      id: check
+      shell: bash
+      env:
+        DOCS: ${{ inputs.docs }}
+        REPO_PATH: ${{ inputs.repo-path }}
+        CONFIG: ${{ inputs.config }}
+        LOCK: ${{ inputs.lock }}
+        BASE: ${{ inputs.base }}
+        PR_BASE: ${{ github.event.pull_request.base.sha }}
+        MODEL: ${{ inputs.model }}
+        OUT: ${{ inputs.out }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+      run: |
+        args=(check --repo "$REPO_PATH" --out "$OUT" --model "$MODEL" --sarif-root "$GITHUB_WORKSPACE")
+        while IFS= read -r d; do
+          d="${d#"${d%%[![:space:]]*}"}"; d="${d%"${d##*[![:space:]]}"}"
+          [ -n "$d" ] && args+=(--doc "$d")
+        done < <(printf '%s\n' "$DOCS" | tr ',' '\n')
+        [ -n "$CONFIG" ] && args+=(--config "$CONFIG")
+        [ -n "$LOCK" ] && args+=(--lock "$LOCK")
+        base="${BASE:-$PR_BASE}"
+        [ "$base" = "none" ] && base=""
+        if [ -n "$base" ]; then
+          if ! git -C "$REPO_PATH" rev-parse --verify --quiet "$base^{commit}" > /dev/null; then
+            git -C "$REPO_PATH" fetch --no-tags --quiet --depth=1 origin "$base"
+          fi
+          args+=(--base "$base")
+        fi
+        set +e
+        "$RUNNER_TEMP/archdrift" "${args[@]}"
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        if [ -f "$OUT/report.md" ]; then cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"; fi
+        if [ "$code" -eq 2 ]; then echo "::error::archdrift failed (exit 2)"; exit 2; fi
+
+    - name: Upload SARIF
+      if: always() && inputs.upload-sarif == 'true' && (steps.check.outputs.exit-code == '0' || steps.check.outputs.exit-code == '1')
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.out }}/report.sarif
+        category: archdrift
+
+    - name: Fail on drift
+      if: inputs.fail-on-drift == 'true' && steps.check.outputs.exit-code == '1'
+      shell: bash
+      run: |
+        echo "::error::archdrift found architecture drift; see the job summary or ${{ inputs.out }}/report.md"
+        exit 1
