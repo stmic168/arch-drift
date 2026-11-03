@@ -49,6 +49,10 @@ type Finding struct {
 	Weight   int                  `json:"weight,omitempty"`   // ranking for undocumented components: importers*100 + packages
 	Via      []string             `json:"via,omitempty"`      // component path when proven transitively
 	Accepted *Accepted            `json:"accepted,omitempty"` // set when the baseline accepts this finding
+	// Diff mode (--base): new, worsened or existing, and the evidence in files
+	// the base revision's finding did not have.
+	Status      string               `json:"status,omitempty"`
+	NewEvidence []codemodel.Location `json:"new_evidence,omitempty"`
 }
 
 // Options tune the diff.
@@ -523,4 +527,57 @@ func sameOwner(a, b []string) bool {
 		}
 	}
 	return false
+}
+
+// Change statuses, set by CompareBase in diff mode.
+const (
+	StatusNew      = "new"      // not present on the base revision
+	StatusWorsened = "worsened" // present on the base, with evidence in new files
+	StatusExisting = "existing" // present on the base, nothing new
+)
+
+// CompareBase marks each finding of head against the findings of the base
+// revision, so that only drift introduced by a change fails the check.
+// A finding is new when its ID is absent on the base, worsened when it has
+// code evidence in files the base finding did not have (compared by file,
+// not line, so unrelated edits that shift lines do not count), and existing
+// otherwise. Existing findings stop failing. It returns the IDs of failing
+// base findings that no longer occur (fixed by the change).
+func CompareBase(head, base *Result) (fixed []string) {
+	byID := map[string]Finding{}
+	for _, f := range base.Findings {
+		byID[f.ID] = f
+	}
+	seen := map[string]bool{}
+	for i := range head.Findings {
+		f := &head.Findings[i]
+		seen[f.ID] = true
+		b, ok := byID[f.ID]
+		if !ok {
+			f.Status = StatusNew
+			continue
+		}
+		files := map[string]bool{}
+		for _, l := range b.Code {
+			files[l.File] = true
+		}
+		for _, l := range f.Code {
+			if !files[l.File] {
+				f.NewEvidence = append(f.NewEvidence, l)
+			}
+		}
+		if len(f.NewEvidence) > 0 {
+			f.Status = StatusWorsened
+			continue
+		}
+		f.Status = StatusExisting
+		f.Failing = false
+	}
+	for _, f := range base.Findings {
+		if f.Failing && !seen[f.ID] {
+			fixed = append(fixed, f.ID)
+		}
+	}
+	sort.Strings(fixed)
+	return fixed
 }

@@ -43,6 +43,8 @@ go build -o archdrift ./cmd/archdrift
 | `--no-lock` | | `check` only: ignore the lock and extract from the doc |
 | `--config` | `archdrift.json` at the repo root, if present | per-repo configuration (below) |
 | `--baseline` | `archdrift.baseline.json` at the repo root, if present | accepted known drift (below) |
+| `--base` | | `check` only: git revision to compare with (e.g. `origin/main`). Only drift introduced or worsened since then fails (below). |
+| `--sarif-root` | `--repo` | `check` only: directory SARIF paths are relative to; set it to the checkout root when `--repo` is a subdirectory |
 | `--today` | current UTC date | `YYYY-MM-DD` used for baseline expiry; set it for reproducible runs |
 
 Exit codes: `check` returns `0` no drift, `1` drift, `2` error; `lock` and `baseline` return `0` written, `2` error. `UNVERIFIABLE` findings never fail the check.
@@ -180,11 +182,12 @@ A component is a deployable (separately run program) when a `main` package sits 
    | `UNVERIFIABLE` | info | no | relation that imports cannot prove or disprove: the target is a deployable (a main package cannot be imported); the protocol is a runtime transport (HTTP, gRPC, Kafka, queue, ...) and there is no import; or one endpoint has no code (missing, or external by design) |
 
    Doc components the model marks `external` (users, SDK workers, dashboards, managed services) are not reported as `MISSING_COMPONENT` when they have no code ID. Relations to `ext:*` are always checkable: the driver import is the evidence, directly or through a client wrapper (`store -> cacheutil -> memcached` satisfies "Store uses Memcached"). A required relation is also satisfied by a protocol edge. The protocol `network` (separately running nodes that talk without a named protocol) counts as a runtime transport. By default only direct imports count; `transitive` in the config extends that to import paths. Edges touching an undocumented component are not reported again as `UNDOCUMENTED_EDGE`.
-5. **Report** (`internal/report`): `report.md` (findings with evidence, coloured Mermaid diagram, dropped claims, token usage and estimated cost) and `report.json`. Output has no timestamps and is byte-identical across runs on the same inputs.
+5. **Report** (`internal/report`): `report.md` (findings with evidence, coloured Mermaid diagram, dropped claims, token usage and estimated cost), `report.json` and `report.sarif`. Output has no timestamps and is byte-identical across runs on the same inputs.
 
 ## Layout
 
 ```
+action.yml                  composite GitHub Action
 cmd/archdrift/main.go       CLI
 internal/codemodel          scanner
 internal/docmodel           Extractor interface, Anthropic client, cache, verifier
@@ -212,6 +215,45 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 ## Pilot on public repositories
 
 `.github/workflows/pilot.yml` (manual) runs archdrift on any public Go repository: it shallow-clones the repo, prints `scan`, runs `lock` (one API call; only the doc and component IDs are sent), runs `check` from that lock, and prints the doc mapping and every finding to the log and job summary. Inputs: `repo` (owner/name), optional `ref`, `doc` (path in that repo; comma-separated for several files), optional `config` (a file under `pilot/` in this repo) and `model`. The log also prints the lock JSON, so a run can be replayed offline against the same mapping. Configs for pilot targets live in `pilot/` (e.g. `pilot/temporal.json`).
+
+### Pull requests: `--base` and SARIF
+
+`archdrift check --base origin/main ...` checks the base revision out in a temporary git worktree, runs the same doc model and options there, and compares. Each finding gets a status:
+
+- `new`: absent on the base. Fails.
+- `worsened`: present on the base, but with code evidence in files the base finding did not have (compared by file, so shifted lines do not count). Fails, and the report lists the new evidence.
+- `existing`: already on the base and nothing new. Does not fail; listed under "Pre-existing drift".
+
+Failing base findings that disappeared are listed as "Fixed by this change". `--repo` may be a subdirectory of the git repository; the base commit must be available locally (fetch it first in a shallow clone).
+
+Every `check` also writes `<out>/report.sarif` (SARIF 2.1.0) for GitHub code scanning: one rule per finding type, failing findings as errors (warnings for low severity), others as notes, located at the code evidence or, for findings without code, at the quote's line in the doc.
+
+### GitHub Action
+
+`action.yml` makes the repository usable as a step. With a committed lock no API key is needed; on `pull_request` events it compares with the PR base by default, so only drift the PR introduces fails.
+
+```yaml
+name: architecture
+on: pull_request
+permissions:
+  contents: read
+  security-events: write   # only for upload-sarif
+jobs:
+  archdrift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: stmic168/arch-drift@main
+        with:
+          docs: docs/architecture.md        # comma- or newline-separated
+          # config: archdrift.json          # default: archdrift.json in repo-path
+          # lock: docs/architecture.lock.json  # default: next to the first doc
+          # base: none                      # check everything instead of the PR diff
+          upload-sarif: "true"              # annotate the PR's changed lines
+          # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # only without a lock
+```
+
+Inputs: `docs`, `repo-path`, `config`, `lock`, `base`, `model`, `anthropic-api-key`, `out`, `upload-sarif`, `fail-on-drift`. Outputs: `exit-code`, `report`, `sarif`. `report.md` is added to the job summary. `.github/workflows/action-selftest.yml` runs the action against the fixture on every PR.
 
 ### Rules docs (gate mode)
 

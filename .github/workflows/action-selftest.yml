@@ -1,0 +1,45 @@
+# Exercises the composite action in this repository against the fixture.
+name: action-selftest
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  full-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: archdrift
+        uses: ./
+        with:
+          repo-path: testdata/shop
+          docs: testdata/shop/design.md
+          base: none
+          fail-on-drift: "false"
+      - name: The fixture's planted drift is reported
+        env:
+          CODE: ${{ steps.archdrift.outputs.exit-code }}
+          SARIF: ${{ steps.archdrift.outputs.sarif }}
+        run: |
+          test "$CODE" = "1"
+          jq -e '.usage.source == "lock"' archdrift-out/report.json
+          jq -e '[.findings[] | select(.failing)] | length == 4' archdrift-out/report.json
+          # SARIF paths are relative to the checkout root, not the fixture.
+          jq -e '[.runs[0].results[].locations[]?.physicalLocation.artifactLocation.uri] | index("testdata/shop/cmd/api/main.go") != null' "$SARIF"
+
+  diff-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # base defaults to the pull request base: drift that already exists on
+      # main does not fail, so this passes unless the PR adds drift to the fixture.
+      - uses: ./
+        with:
+          repo-path: testdata/shop
+          docs: testdata/shop/design.md

@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/stmic168/arch-drift/internal/docmodel"
+	"github.com/stmic168/arch-drift/internal/drift"
 )
 
 const (
@@ -152,7 +155,7 @@ func TestDeterministicOutput(t *testing.T) {
 	if runFixture(t, a) != 1 || runFixture(t, b) != 1 {
 		t.Fatal("unexpected exit code")
 	}
-	for _, name := range []string{"report.md", "report.json"} {
+	for _, name := range []string{"report.md", "report.json", "report.sarif"} {
 		x, err := os.ReadFile(filepath.Join(a, name))
 		if err != nil {
 			t.Fatal(err)
@@ -496,4 +499,188 @@ func TestMultipleDocsAndCoverageNote(t *testing.T) {
 	if code := run(context.Background(), []string{"check", "--repo", dir, "--doc", filepath.Join(dir, "docs/core.md"), "--doc", filepath.Join(dir, "docs/core.md"), "--doc-model", filepath.Join(dir, "dm.json"), "--out", out}, &so, &se, nil); code != 2 {
 		t.Errorf("duplicate doc: exit %d", code)
 	}
+}
+
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, b, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func gitRun(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func TestBaseDiffMode(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	repo := filepath.Join(root, "svc") // a subdirectory of the git repo, like testdata/shop
+	copyTree(t, fixtureRepo, repo)
+	gitRun(t, root, "init", "-q")
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	// The change: another file of the API imports the Store (worsens the
+	// forbidden edge) and Catalog starts importing Payments (new edge).
+	os.WriteFile(filepath.Join(repo, "cmd/api/admin.go"), []byte("package main\n\nimport _ \"example.com/shop/internal/store\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "internal/catalog/pricing.go"), []byte("package catalog\n\nimport _ \"example.com/shop/internal/payments\"\n"), 0o644)
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "change")
+
+	doc := filepath.Join(repo, "design.md")
+	out := filepath.Join(root, "out")
+	var so, se bytes.Buffer
+	code := run(context.Background(), []string{"check", "--repo", repo, "--doc", doc, "--base", "HEAD~1", "--out", out}, &so, &se, failingExtractor(t))
+	if code != 1 {
+		t.Fatalf("exit %d: %s %s", code, so.String(), se.String())
+	}
+	var r struct {
+		Summary struct {
+			Failing, Existing int
+		} `json:"summary"`
+		Findings []struct {
+			ID, Status  string
+			Failing     bool
+			NewEvidence []struct{ File string } `json:"new_evidence"`
+		} `json:"findings"`
+	}
+	b, _ := os.ReadFile(filepath.Join(out, "report.json"))
+	json.Unmarshal(b, &r)
+	failing := map[string]string{}
+	for _, f := range r.Findings {
+		if f.Failing {
+			failing[f.ID] = f.Status
+		}
+	}
+	want := map[string]string{
+		"FORBIDDEN_EDGE:API Gateway -> Store":                   drift.StatusWorsened,
+		"UNDOCUMENTED_EDGE:internal/catalog->internal/payments": drift.StatusNew,
+	}
+	if !reflect.DeepEqual(failing, want) {
+		t.Fatalf("failing = %v, want %v", failing, want)
+	}
+	if r.Summary.Failing != 2 || r.Summary.Existing == 0 {
+		t.Errorf("summary = %+v", r.Summary)
+	}
+	md, _ := os.ReadFile(filepath.Join(out, "report.md"))
+	for _, s := range []string{"[worsened]", "New in this change:", "`cmd/api/admin.go:3`", "## Pre-existing drift (on `HEAD~1`, not failing)", "Compared with base HEAD~1"} {
+		if !bytes.Contains(md, []byte(s)) {
+			t.Errorf("report missing %q", s)
+		}
+	}
+	// Against itself nothing is new: the check passes.
+	if code := run(context.Background(), []string{"check", "--repo", repo, "--doc", doc, "--base", "HEAD", "--out", out}, &so, &se, failingExtractor(t)); code != 0 {
+		t.Errorf("--base HEAD: exit %d", code)
+	}
+	// An unknown revision is an error.
+	if code := run(context.Background(), []string{"check", "--repo", repo, "--doc", doc, "--base", "no-such-ref", "--out", out}, &so, &se, failingExtractor(t)); code != 2 {
+		t.Errorf("unknown base: exit %d", code)
+	}
+	// The temporary worktree is removed.
+	wt, _ := exec.Command("git", "-C", root, "worktree", "list").Output()
+	if strings.Count(string(wt), "\n") != 1 {
+		t.Errorf("worktrees left behind:\n%s", wt)
+	}
+}
+
+func TestSARIF(t *testing.T) {
+	out := t.TempDir()
+	if code := runFixture(t, out); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	type result struct {
+		RuleID    string `json:"ruleId"`
+		Level     string `json:"level"`
+		Locations []struct {
+			PhysicalLocation struct {
+				ArtifactLocation struct{ URI string } `json:"artifactLocation"`
+				Region           struct {
+					StartLine int `json:"startLine"`
+				} `json:"region"`
+			} `json:"physicalLocation"`
+		} `json:"locations"`
+		PartialFingerprints map[string]string `json:"partialFingerprints"`
+	}
+	var log struct {
+		Version string `json:"version"`
+		Runs    []struct {
+			Tool struct {
+				Driver struct {
+					Rules []struct{ ID string } `json:"rules"`
+				} `json:"driver"`
+			} `json:"tool"`
+			Results []result `json:"results"`
+		} `json:"runs"`
+	}
+	read := func(dir string) {
+		b, err := os.ReadFile(filepath.Join(dir, "report.sarif"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &log); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read(out)
+	if log.Version != "2.1.0" || len(log.Runs) != 1 || len(log.Runs[0].Tool.Driver.Rules) != 6 {
+		t.Fatalf("sarif header: %+v", log)
+	}
+	byID := map[string]result{}
+	for _, r := range log.Runs[0].Results {
+		byID[r.PartialFingerprints["archdriftFindingId/v1"]] = r
+	}
+	loc := func(id string) (string, int, string) {
+		r := byID[id]
+		if len(r.Locations) == 0 {
+			return "", 0, r.Level
+		}
+		p := r.Locations[0].PhysicalLocation
+		return p.ArtifactLocation.URI, p.Region.StartLine, r.Level
+	}
+	check := func(id, uri string, line int, level string) {
+		t.Helper()
+		gu, gl, glv := loc(id)
+		if gu != uri || gl != line || glv != level {
+			t.Errorf("%s: %s:%d %s, want %s:%d %s", id, gu, gl, glv, uri, line, level)
+		}
+	}
+	check("FORBIDDEN_EDGE:API Gateway -> Store", "cmd/api/main.go", 10, "error")
+	check("UNDOCUMENTED_EDGE:internal/orders->ext:postgres", "internal/orders/repo/repo.go", 5, "warning")
+	check("UNDOCUMENTED_COMPONENT:pkg/metrics", "pkg/metrics/metrics.go", 2, "note")
+	// No code evidence: the location is the quote's line in the doc.
+	check("MISSING_COMPONENT:Notifier", "design.md", 17, "error")
+	check("MISSING_EDGE:Catalog -> Store", "design.md", 28, "error")
+
+	// With the checkout root one level up, paths gain the subdirectory.
+	out2 := t.TempDir()
+	var so, se bytes.Buffer
+	run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--doc-model", fixtureModel, "--sarif-root", "../../testdata", "--out", out2}, &so, &se, nil)
+	read(out2)
+	byID = map[string]result{}
+	for _, r := range log.Runs[0].Results {
+		byID[r.PartialFingerprints["archdriftFindingId/v1"]] = r
+	}
+	check("FORBIDDEN_EDGE:API Gateway -> Store", "shop/cmd/api/main.go", 10, "error")
+	check("MISSING_COMPONENT:Notifier", "shop/design.md", 17, "error")
 }

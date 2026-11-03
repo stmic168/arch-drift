@@ -319,3 +319,48 @@ func TestStrictProtocols(t *testing.T) {
 		t.Errorf("strict, stated protocol: %s, want UNVERIFIABLE", got)
 	}
 }
+
+func TestCompareBase(t *testing.T) {
+	mk := func(id string, failing bool, files ...string) Finding {
+		f := Finding{ID: id, Type: strings.SplitN(id, ":", 2)[0], Failing: failing}
+		for i, file := range files {
+			f.Code = append(f.Code, loc(file, 10+i))
+		}
+		return f
+	}
+	base := &Result{Findings: []Finding{
+		mk("FORBIDDEN_EDGE:A -> B", true, "a/x.go"),
+		mk("MISSING_EDGE:C -> D", true),
+		mk("UNDOCUMENTED_EDGE:e->f", true, "e/y.go"),
+		mk("MISSING_COMPONENT:Gone", true),
+		mk("UNVERIFIABLE:G -> H", false),
+	}}
+	head := &Result{Findings: []Finding{
+		mk("FORBIDDEN_EDGE:A -> B", true, "a/x.go", "a/new.go"), // a new violating file
+		mk("MISSING_EDGE:C -> D", true),                         // unchanged
+		{ID: "UNDOCUMENTED_EDGE:e->f", Type: UndocumentedEdge, Failing: true, Code: []codemodel.Location{loc("e/y.go", 99)}}, // line moved only
+		mk("UNDOCUMENTED_EDGE:p->q", true, "p/z.go"), // new
+	}}
+	fixed := CompareBase(head, base)
+	want := map[string]struct {
+		status  string
+		failing bool
+	}{
+		"FORBIDDEN_EDGE:A -> B":  {StatusWorsened, true},
+		"MISSING_EDGE:C -> D":    {StatusExisting, false},
+		"UNDOCUMENTED_EDGE:e->f": {StatusExisting, false},
+		"UNDOCUMENTED_EDGE:p->q": {StatusNew, true},
+	}
+	for _, f := range head.Findings {
+		w := want[f.ID]
+		if f.Status != w.status || f.Failing != w.failing {
+			t.Errorf("%s: status %q failing %v, want %q %v", f.ID, f.Status, f.Failing, w.status, w.failing)
+		}
+	}
+	if ne := head.Findings[0].NewEvidence; len(ne) != 1 || ne[0].File != "a/new.go" {
+		t.Errorf("new evidence = %v", ne)
+	}
+	if !reflect.DeepEqual(fixed, []string{"MISSING_COMPONENT:Gone"}) {
+		t.Errorf("fixed = %v (a non-failing base finding is not 'fixed')", fixed)
+	}
+}
