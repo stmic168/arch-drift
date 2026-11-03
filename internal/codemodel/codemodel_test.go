@@ -1,6 +1,8 @@
 package codemodel
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -8,7 +10,7 @@ import (
 const fixture = "../../testdata/shop"
 
 func TestScanFixture(t *testing.T) {
-	m, err := Scan(fixture)
+	m, err := Scan(fixture, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +51,7 @@ func TestScanFixture(t *testing.T) {
 }
 
 func TestScanRollsUpSubpackagesAndSkipsNoise(t *testing.T) {
-	m, err := Scan(fixture)
+	m, err := Scan(fixture, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,5 +113,61 @@ func TestComponentOf(t *testing.T) {
 		if got := ComponentOf(in); got != want {
 			t.Errorf("ComponentOf(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func writeRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for p, body := range files {
+		full := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func TestScanWithOptions(t *testing.T) {
+	repo := writeRepo(t, map[string]string{
+		"go.mod":                          "module example.com/mono\n",
+		"services/billing/main.go":        "package main\n\nimport (\n\t_ \"example.com/mono/services/billing/store\"\n\t_ \"example.com/mono/libs/money\"\n)\n\nfunc main() {}\n",
+		"services/billing/store/store.go": "package store\n\nimport _ \"github.com/aws/aws-sdk-go-v2/service/s3\"\n",
+		"libs/money/money.go":             "package money\n\nimport _ \"example.com/mono/gen/pb\"\n",
+		"gen/pb/pb.go":                    "package pb\n",
+		"internal/old/old.go":             "package old\n",
+		"libs/money/tool/main.go":         "package main\n\nfunc main() {}\n",
+	})
+	opts := Options{
+		Components: []ComponentRule{{ID: "billing", Paths: []string{"services/billing"}}, {ID: "money", Paths: []string{"libs/money"}}},
+		External:   []ExternalRule{{ID: "ext:s3", Prefixes: []string{"github.com/aws/aws-sdk-go-v2/service/s3"}}},
+		Exclude:    []string{"gen"},
+	}
+	m, err := Scan(repo, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := m.IDs(), []string{"billing", "ext:s3", "internal/old", "money"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("IDs = %v, want %v", got, want)
+	}
+	if !m.IsDeployable("billing") || m.IsDeployable("money") {
+		t.Error("deployable must come from a main package at the component root, not a nested tool")
+	}
+	for _, e := range [][2]string{{"billing", "ext:s3"}, {"billing", "money"}} {
+		if _, ok := m.Edge(e[0], e[1]); !ok {
+			t.Errorf("missing edge %v", e)
+		}
+	}
+	if len(m.Edges) != 2 {
+		t.Errorf("edges = %+v (gen/ is excluded, so money -> gen must not appear)", m.Edges)
+	}
+
+	opts.NoDefaultLayout = true
+	m, _ = Scan(repo, opts)
+	if _, ok := m.Component("internal/old"); ok {
+		t.Error("NoDefaultLayout must drop internal/old")
 	}
 }

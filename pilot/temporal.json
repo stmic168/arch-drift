@@ -1,0 +1,23 @@
+{
+  "components": [
+    {"id": "frontend", "paths": ["service/frontend"]},
+    {"id": "history", "paths": ["service/history"]},
+    {"id": "matching", "paths": ["service/matching"]},
+    {"id": "internal-worker", "paths": ["service/worker"]},
+    {"id": "service-wiring", "paths": ["service"]},
+    {"id": "server", "paths": ["temporal"]},
+    {"id": "clients", "paths": ["client"]},
+    {"id": "persistence", "paths": ["common/persistence"]},
+    {"id": "rpc", "paths": ["common/rpc"]},
+    {"id": "membership", "paths": ["common/membership"]},
+    {"id": "chasm", "paths": ["chasm"]}
+  ],
+  "external": [
+    {"id": "ext:cassandra", "prefixes": ["github.com/gocql/gocql", "github.com/apache/cassandra-gocql-driver"]},
+    {"id": "ext:mysql", "prefixes": ["github.com/go-sql-driver/mysql"]},
+    {"id": "ext:sqlite", "prefixes": ["modernc.org/sqlite"]},
+    {"id": "ext:elasticsearch", "prefixes": ["github.com/olivere/elastic"]},
+    {"id": "ext:temporal-sdk", "prefixes": ["go.temporal.io/sdk"]}
+  ],
+  "exclude": ["tests", "tools", "temporaltest", "develop", "common/testing", "cmd/tools"]
+}

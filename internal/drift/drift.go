@@ -44,6 +44,16 @@ type Finding struct {
 	Code     []codemodel.Location `json:"code_evidence"`       // file:line from code
 	DocQuote string               `json:"doc_quote,omitempty"` // verbatim from doc
 	Protocol string               `json:"protocol,omitempty"`
+	Via      []string             `json:"via,omitempty"`      // component path when proven transitively
+	Accepted *Accepted            `json:"accepted,omitempty"` // set when the baseline accepts this finding
+}
+
+// Options tune the diff.
+type Options struct {
+	// TransitiveRequired lets an import path through other components satisfy a required relation.
+	TransitiveRequired bool
+	// TransitiveForbidden makes an import path through other components violate a forbidden relation.
+	TransitiveForbidden bool
 }
 
 // Status of a documented relation, for diagrams.
@@ -103,8 +113,7 @@ func IsNetworkProtocol(p string) bool {
 	return false
 }
 
-func isDeployable(id string) bool { return strings.HasPrefix(id, "cmd/") }
-func isExternal(id string) bool   { return strings.HasPrefix(id, "ext:") }
+func isExternal(id string) bool { return strings.HasPrefix(id, "ext:") }
 
 func allOf(ids []string, pred func(string) bool) bool {
 	for _, id := range ids {
@@ -125,8 +134,9 @@ func anyOf(ids []string, pred func(string) bool) bool {
 }
 
 // Checkable decides whether a required relation can be proven or disproven
-// by static imports, returning the reason when it cannot.
-func Checkable(fromIDs, toIDs []string, protocol string) (bool, string) {
+// by static imports, returning the reason when it cannot. isDeployable
+// reports whether a code ID is a main package (a separately run program).
+func Checkable(fromIDs, toIDs []string, protocol string, isDeployable func(string) bool) (bool, string) {
 	if anyOf(toIDs, isExternal) {
 		return true, ""
 	}
@@ -139,8 +149,66 @@ func Checkable(fromIDs, toIDs []string, protocol string) (bool, string) {
 	return true, ""
 }
 
+// path finds the shortest import path from any of from to any of to, at
+// least two hops long (direct edges are handled separately). Deterministic:
+// edges are visited in sorted order.
+func path(code *codemodel.Model, from, to []string) []codemodel.Edge {
+	adj := map[string][]codemodel.Edge{}
+	for _, e := range code.Edges {
+		adj[e.From] = append(adj[e.From], e)
+	}
+	target := map[string]bool{}
+	for _, t := range to {
+		target[t] = true
+	}
+	prev := map[string]codemodel.Edge{}
+	seen := map[string]bool{}
+	queue := append([]string(nil), from...)
+	for _, f := range from {
+		seen[f] = true
+	}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, e := range adj[cur] {
+			if seen[e.To] {
+				continue
+			}
+			seen[e.To] = true
+			prev[e.To] = e
+			if target[e.To] {
+				var chain []codemodel.Edge
+				for n := e.To; ; {
+					pe, ok := prev[n]
+					if !ok {
+						break
+					}
+					chain = append([]codemodel.Edge{pe}, chain...)
+					n = pe.From
+				}
+				if len(chain) >= 2 {
+					return chain
+				}
+				continue
+			}
+			queue = append(queue, e.To)
+		}
+	}
+	return nil
+}
+
+func chainEvidence(chain []codemodel.Edge) ([]codemodel.Location, []string) {
+	var ev []codemodel.Location
+	via := []string{chain[0].From}
+	for _, e := range chain {
+		ev = append(ev, e.Evidence[0])
+		via = append(via, e.To)
+	}
+	return ev, via
+}
+
 // Diff computes findings. Inputs must already be verified.
-func Diff(code *codemodel.Model, doc *docmodel.Model) *Result {
+func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 	res := &Result{Findings: []Finding{}, Graph: []GraphEdge{}, MissingNodes: []string{}, UndocumentedNodes: []string{}}
 	byName := map[string]docmodel.Component{}
 	owners := map[string][]string{} // code ID -> doc component names
@@ -209,12 +277,25 @@ func Diff(code *codemodel.Model, doc *docmodel.Model) *Result {
 				}
 			}
 		}
-		var evidence []codemodel.Location
+		evidence := []codemodel.Location{} // never null in report.json
 		for _, e := range hits {
 			evidence = append(evidence, e.Evidence...)
 		}
 		switch r.Kind {
 		case docmodel.KindForbidden:
+			if len(hits) == 0 && opts.TransitiveForbidden {
+				if chain := path(code, fc.CodeIDs, tc.CodeIDs); chain != nil {
+					ev, via := chainEvidence(chain)
+					addGraph(chain[0].From, chain[len(chain)-1].To, EdgeForbidden, "forbidden, via "+strings.Join(via[1:len(via)-1], ", "))
+					res.Findings = append(res.Findings, Finding{
+						ID: ForbiddenEdge + ":" + subject, Type: ForbiddenEdge, Severity: High, Failing: true,
+						Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
+						Message: fmt.Sprintf("Doc forbids %s depending on %s, and the code reaches it indirectly: %s.", r.From, r.To, strings.Join(via, " -> ")),
+						Code:    ev, DocQuote: r.Quote, Via: via,
+					})
+					continue
+				}
+			}
 			if len(hits) == 0 {
 				addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeRespected, "forbidden")
 				continue
@@ -229,7 +310,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model) *Result {
 				Code:    evidence, DocQuote: r.Quote,
 			})
 		case docmodel.KindRequired:
-			if ok, why := Checkable(fc.CodeIDs, tc.CodeIDs, r.Protocol); !ok {
+			if ok, why := Checkable(fc.CodeIDs, tc.CodeIDs, r.Protocol, code.IsDeployable); !ok {
 				addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeUnverifiable, r.Protocol)
 				res.Findings = append(res.Findings, Finding{
 					ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
@@ -243,6 +324,13 @@ func Diff(code *codemodel.Model, doc *docmodel.Model) *Result {
 					addGraph(e.From, e.To, EdgeOK, r.Protocol)
 				}
 				continue
+			}
+			if opts.TransitiveRequired {
+				if chain := path(code, fc.CodeIDs, tc.CodeIDs); chain != nil {
+					_, via := chainEvidence(chain)
+					addGraph(chain[0].From, chain[len(chain)-1].To, EdgeOK, "via "+strings.Join(via[1:len(via)-1], ", "))
+					continue
+				}
 			}
 			addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeMissing, "missing")
 			res.Findings = append(res.Findings, Finding{

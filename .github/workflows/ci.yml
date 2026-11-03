@@ -29,3 +29,12 @@ jobs:
           set -e
           echo "exit code: $code"
           test "$code" -eq 1
+      - name: Check with the committed lock (no API call, expects exit 1)
+        run: |
+          set +e
+          go run ./cmd/archdrift check --repo testdata/shop --doc testdata/shop/design.md --out out-lock
+          code=$?
+          set -e
+          echo "exit code: $code"
+          test "$code" -eq 1
+          jq -e '.usage.source == "lock"' out-lock/report.json

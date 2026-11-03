@@ -1,6 +1,8 @@
 package drift
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stmic168/arch-drift/internal/codemodel"
@@ -10,7 +12,7 @@ import (
 func loc(f string, l int) codemodel.Location { return codemodel.Location{File: f, Line: l} }
 
 func comp(id string) codemodel.Component {
-	return codemodel.Component{ID: id, External: len(id) > 4 && id[:4] == "ext:", Anchor: loc(id+"/x.go", 1)}
+	return codemodel.Component{ID: id, External: strings.HasPrefix(id, "ext:"), Deployable: strings.HasPrefix(id, "cmd/"), Anchor: loc(id+"/x.go", 1)}
 }
 
 func edge(from, to string, l int) codemodel.Edge {
@@ -102,7 +104,7 @@ func TestDiffFindingTypes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			code := &codemodel.Model{Components: tc.comps, Edges: tc.edges}
-			res := Diff(code, &docmodel.Model{Components: tc.docComps, Relations: tc.relations})
+			res := Diff(code, &docmodel.Model{Components: tc.docComps, Relations: tc.relations}, Options{})
 			if tc.wantType == "" {
 				if len(res.Findings) != 0 || res.Failing() {
 					t.Fatalf("want no findings, got %+v", res.Findings)
@@ -139,9 +141,53 @@ func TestCheckable(t *testing.T) {
 		{[]string{"cmd/api"}, []string{"internal/x"}, "in-process", true},
 		{[]string{"internal/a"}, []string{"internal/b"}, "HTTP", true},
 	}
+	isCmd := func(id string) bool { return strings.HasPrefix(id, "cmd/") }
 	for _, c := range cases {
-		if got, _ := Checkable(c.from, c.to, c.proto); got != c.want {
+		if got, _ := Checkable(c.from, c.to, c.proto, isCmd); got != c.want {
 			t.Errorf("Checkable(%v,%v,%q) = %v", c.from, c.to, c.proto, got)
 		}
+	}
+}
+
+func TestTransitive(t *testing.T) {
+	comps := []codemodel.Component{comp("cmd/api"), comp("internal/a"), comp("internal/b"), comp("ext:postgres")}
+	edges := []codemodel.Edge{edge("cmd/api", "internal/a", 5), edge("internal/a", "internal/b", 6), edge("internal/b", "ext:postgres", 7)}
+	docComps := []docmodel.Component{dc("API", "cmd/api"), dc("A", "internal/a"), dc("B", "internal/b"), dc("PG", "ext:postgres")}
+	base := []docmodel.Relation{rel("API", "A", docmodel.KindRequired, ""), rel("A", "B", docmodel.KindRequired, ""), rel("B", "PG", docmodel.KindRequired, "")}
+	code := &codemodel.Model{Components: comps, Edges: edges}
+
+	// Required API -> PG: missing when only direct imports count, satisfied transitively.
+	req := &docmodel.Model{Components: docComps, Relations: append(append([]docmodel.Relation{}, base...), rel("API", "PG", docmodel.KindRequired, "SQL"))}
+	if res := Diff(code, req, Options{}); len(res.Findings) != 1 || res.Findings[0].Type != MissingEdge {
+		t.Fatalf("direct only: %+v", res.Findings)
+	}
+	if res := Diff(code, req, Options{TransitiveRequired: true}); len(res.Findings) != 0 {
+		t.Fatalf("transitive required: %+v", res.Findings)
+	}
+
+	// Forbidden API -> PG: respected when only direct imports count, violated transitively.
+	forb := &docmodel.Model{Components: docComps, Relations: append(append([]docmodel.Relation{}, base...), rel("API", "PG", docmodel.KindForbidden, ""))}
+	if res := Diff(code, forb, Options{}); len(res.Findings) != 0 {
+		t.Fatalf("direct only: %+v", res.Findings)
+	}
+	res := Diff(code, forb, Options{TransitiveForbidden: true})
+	if len(res.Findings) != 1 || res.Findings[0].Type != ForbiddenEdge {
+		t.Fatalf("transitive forbidden: %+v", res.Findings)
+	}
+	f := res.Findings[0]
+	if !reflect.DeepEqual(f.Via, []string{"cmd/api", "internal/a", "internal/b", "ext:postgres"}) || len(f.Code) != 3 || f.Code[0].String() != "cmd/api/x.go:5" {
+		t.Fatalf("evidence: via=%v code=%v", f.Via, f.Code)
+	}
+}
+
+func TestDeployableComesFromModel(t *testing.T) {
+	// A main package outside cmd/ is still a deployable.
+	svc := codemodel.Component{ID: "services/billing", Deployable: true, Anchor: loc("services/billing/main.go", 1)}
+	code := &codemodel.Model{Components: []codemodel.Component{comp("cmd/api"), svc}}
+	doc := &docmodel.Model{Components: []docmodel.Component{dc("API", "cmd/api"), dc("Billing", "services/billing")},
+		Relations: []docmodel.Relation{rel("API", "Billing", docmodel.KindRequired, "")}}
+	res := Diff(code, doc, Options{})
+	if len(res.Findings) != 1 || res.Findings[0].Type != Unverifiable {
+		t.Fatalf("want UNVERIFIABLE, got %+v", res.Findings)
 	}
 }

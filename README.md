@@ -24,8 +24,13 @@ go build -o archdrift ./cmd/archdrift
 ```
 
 ```bash
-./archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>]
+./archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock]
+./archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>]
+./archdrift baseline --repo <path> --doc <design.md> [same flags as check]
+./archdrift scan --repo <path> [--config <json>] [--json]
 ```
+
+`scan` prints the code model only (components, which are deployables, packages, import edges in and out) without reading a doc or calling the API. Use it to see how archdrift sees a repo and to write `archdrift.json`.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -33,9 +38,29 @@ go build -o archdrift ./cmd/archdrift
 | `--doc` | required | Markdown design doc (Mermaid blocks are fine) |
 | `--out` | `archdrift-out` | output dir: `report.md`, `report.json`, `cache/` |
 | `--model` | `claude-sonnet-5-5` | Claude model used for doc extraction |
-| `--doc-model` | | load a recorded doc model JSON and skip the API |
+| `--doc-model` | | load a recorded doc model JSON and skip the API (ignores any lock) |
+| `--lock` | next to the doc (`design.md` -> `design.lock.json`) | lock file to read (`check`) or write (`lock`) |
+| `--no-lock` | | `check` only: ignore the lock and extract from the doc |
+| `--config` | `archdrift.json` at the repo root, if present | per-repo configuration (below) |
+| `--baseline` | `archdrift.baseline.json` at the repo root, if present | accepted known drift (below) |
+| `--today` | current UTC date | `YYYY-MM-DD` used for baseline expiry; set it for reproducible runs |
 
-Exit codes: `0` no drift, `1` drift, `2` error. `UNVERIFIABLE` findings never fail the check.
+Exit codes: `check` returns `0` no drift, `1` drift, `2` error; `lock` and `baseline` return `0` written, `2` error. `UNVERIFIABLE` findings never fail the check.
+
+### Lock file (recommended workflow)
+
+The LLM mapping can differ between uncached runs. To make `check` deterministic and free, lock the mapping once:
+
+1. `archdrift lock --repo . --doc docs/design.md` calls the API once and writes `docs/design.lock.json`. It prints a review: each doc component with its code IDs, every relation, code IDs nothing maps to, and claims that failed verification (these are not written).
+2. Review the mapping, edit the lock by hand if needed, and commit it.
+3. `archdrift check --repo . --doc docs/design.md` now reads the lock and never calls the API. The report shows `Doc model source: lock`.
+
+Rules:
+
+- The lock stores the doc's SHA-256. If the doc changes, `check` exits 2 with "lock file is stale"; re-run `archdrift lock` and review the diff.
+- If code components were added or removed since the lock was written, `check` still runs and adds a note at the top of the report. New components show as `UNDOCUMENTED_COMPONENT` until you re-lock; mappings to removed components are dropped as unknown code IDs.
+- The verifier runs on every `check`, so a hand edit with a quote that is not in the doc or an unknown code ID is dropped and listed, not trusted.
+- Without a lock next to the doc, `check` extracts live as before. `--no-lock` forces that, `--doc-model` overrides both.
 
 Offline demo on the fixture:
 
@@ -52,9 +77,62 @@ report: /tmp/shop-report/report.md
 
 What is sent to the API: the system prompt, the doc text, and the list of component IDs (e.g. `cmd/api`, `internal/orders`, `ext:postgres`). No source code, file paths or import sites leave the machine.
 
+### Baseline (`archdrift.baseline.json`)
+
+A real repo usually has drift on day one. The baseline accepts known drift so that only new drift fails the check.
+
+1. `archdrift baseline --repo . --doc docs/design.md` writes every current failing finding to `archdrift.baseline.json`. New entries get the reason `TODO: explain why this drift is accepted` and expire in 90 days. Re-running keeps the reason and expiry of entries that still match.
+2. Replace each TODO with the real reason (for example a ticket), adjust `expires`, and commit.
+
+```json
+{
+  "version": 1,
+  "accepted": [
+    {"id": "FORBIDDEN_EDGE:API Gateway -> Store", "reason": "Legacy path, removal tracked in ARCH-42", "expires": "2027-01-31"}
+  ]
+}
+```
+
+On `check`:
+
+- An accepted finding does not fail the check. It moves to an "Accepted drift (baseline)" table in the report with its reason, expiry and evidence, and is counted as `accepted` (not in `by_type`).
+- An entry is valid through its `expires` date (optional; omit it for no expiry). After that the finding fails again and the report says so.
+- The report also notes entries that no longer match any finding (remove them) and entries still holding the TODO reason.
+- `id` is the finding's `id` from `report.json`. A missing explicit `--baseline` is an error, so a typo cannot silently fail every accepted finding.
+
+### Configuration (`archdrift.json`)
+
+Optional, at the repo root (or `--config`). JSON rather than YAML because the stdlib has no YAML parser and the Anthropic SDK stays the only dependency. Unknown fields and invalid values are errors.
+
+```json
+{
+  "components": [
+    {"id": "billing", "paths": ["services/billing"]},
+    {"id": "ledger",  "paths": ["libs/ledger", "libs/ledgerutil"]}
+  ],
+  "external": [
+    {"id": "ext:s3", "prefixes": ["github.com/aws/aws-sdk-go-v2/service/s3"]}
+  ],
+  "exclude": ["gen", "tools"],
+  "default_layout": true,
+  "transitive": {"required": true, "forbidden": false}
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `components` | Map directories to component IDs. A path matches itself and everything below it; the longest matching path wins. Use this for monorepos and layouts other than `cmd/` / `internal/` / `pkg/`. |
+| `external` | Extra `ext:*` IDs by import-path prefix, checked before the built-in catalog (e.g. internal clients, S3, Elasticsearch). |
+| `exclude` | Directories to skip entirely (generated code, tools). |
+| `default_layout` | Keep the `cmd/x`, `internal/x`, `pkg/x` rule for directories no configured component matches. Default `true`; set `false` to model only configured components. |
+| `transitive.required` | A required relation is also satisfied by an import path through other components (e.g. `api -> store -> ext:postgres` satisfies "API uses Postgres"). Each hop still needs its own doc relation, or it shows as `UNDOCUMENTED_EDGE`. |
+| `transitive.forbidden` | A forbidden relation is also violated by an indirect path. The finding lists the path and the `file:line` of each hop. |
+
+A component is a deployable (separately run program) when a `main` package sits at its root directory (`cmd/x`, or the configured path), whatever the layout. A helper tool nested deeper inside a component does not count. Deployables drive the `UNVERIFIABLE` rule.
+
 ## Pipeline
 
-1. **Code model** (`internal/codemodel`). Parses every `.go` file with `go/parser` (imports only), skipping `_test.go`, `vendor/`, `testdata/` and hidden dirs below the root. Components are `cmd/x`, `internal/x`, `pkg/x`; subpackages roll up (`internal/orders/repo` belongs to `internal/orders`). Edges are imports of the module's own packages, with every `file:line`. External drivers map to catalog IDs:
+1. **Code model** (`internal/codemodel`). Parses every `.go` file with `go/parser` (imports only), skipping `_test.go`, `vendor/`, `testdata/`, hidden dirs and configured `exclude` dirs below the root. Components are configured `components`, then `cmd/x`, `internal/x`, `pkg/x`; subpackages roll up (`internal/orders/repo` belongs to `internal/orders`). Edges are imports of the module's own packages, with every `file:line`. External drivers map to catalog IDs:
 
    | Import prefix | ID |
    |---|---|
@@ -78,9 +156,9 @@ What is sent to the API: the system prompt, the doc text, and the list of compon
    | `MISSING_EDGE` | medium | yes | doc requires A to depend on B, the relation can be checked by static import, and there is no direct import |
    | `UNDOCUMENTED_EDGE` | low | yes | direct import between two documented components (in different doc components) that no doc relation covers |
    | `UNDOCUMENTED_COMPONENT` | low | yes | code component that no doc component maps to |
-   | `UNVERIFIABLE` | info | no | required relation that imports cannot prove: target is a `cmd/*` deployable (a main package cannot be imported), or the protocol is a runtime transport (HTTP, gRPC, Kafka, queue, ...) and one side is a deployable |
+   | `UNVERIFIABLE` | info | no | required relation that imports cannot prove: target is a deployable (a main package cannot be imported), or the protocol is a runtime transport (HTTP, gRPC, Kafka, queue, ...) and one side is a deployable |
 
-   Relations to `ext:*` are always checkable (the driver import is the evidence). Edges are direct imports only; transitive paths do not satisfy or violate a relation. Edges touching an undocumented component are not reported again as `UNDOCUMENTED_EDGE`.
+   Relations to `ext:*` are always checkable (the driver import is the evidence). By default only direct imports count; `transitive` in the config extends that to import paths. Edges touching an undocumented component are not reported again as `UNDOCUMENTED_EDGE`.
 5. **Report** (`internal/report`): `report.md` (findings with evidence, coloured Mermaid diagram, dropped claims, token usage and estimated cost) and `report.json`. Output has no timestamps and is byte-identical across runs on the same inputs.
 
 ## Layout
@@ -91,7 +169,8 @@ internal/codemodel          scanner
 internal/docmodel           Extractor interface, Anthropic client, cache, verifier
 internal/drift              deterministic diff
 internal/report             Markdown, Mermaid, JSON
-testdata/shop/              fixture: Go repo, design.md, recorded docmodel.json, expected.json
+pilot/                      archdrift.json configs for pilot repositories
+testdata/shop/              fixture: Go repo, design.md, recorded docmodel.json, design.lock.json, expected.json
 ```
 
 The fixture plants one finding of each type (see the `planted` comments in its code) plus three bad claims in `docmodel.json` (a fake quote, an unknown code ID, a fake `forbidden` relation that would otherwise create a false `FORBIDDEN_EDGE`). It also contains a `_test.go`, a `testdata/` dir, a `vendor/` dir and a prompt-injection comment in the doc to exercise the skips.
@@ -106,11 +185,15 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 
 ## CI
 
-- `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: `go vet`, `go test`, and an offline fixture run that must exit 1.
-- `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture, so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), prints the doc model and dropped claims to the log, fails if the failing findings differ from `expected.json` (a different `UNVERIFIABLE` set is only a notice, since it depends on how the model reads runtime relations), puts `report.md` in the job summary, and uploads the reports as an artifact. You can pick a branch under **Use workflow from**. GitHub only shows **Run workflow** once the workflow file is on the default branch.
+- `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: `go vet`, `go test`, an offline fixture run with `--doc-model`, and a run that reads the committed `testdata/shop/design.lock.json`; both must exit 1.
+- `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture (with `--no-lock`), so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), prints the doc model and dropped claims to the log, fails if the failing findings differ from `expected.json` (a different `UNVERIFIABLE` set is only a notice, since it depends on how the model reads runtime relations), puts `report.md` in the job summary, and uploads the reports as an artifact. You can pick a branch under **Use workflow from**. GitHub only shows **Run workflow** once the workflow file is on the default branch.
+
+## Pilot on public repositories
+
+`.github/workflows/pilot.yml` (manual) runs archdrift on any public Go repository: it shallow-clones the repo, prints `scan`, runs `lock` (one API call; only the doc and component IDs are sent), runs `check` from that lock, and prints the doc mapping and every finding to the log and job summary. Inputs: `repo` (owner/name), optional `ref`, `doc` (path in that repo), optional `config` (a file under `pilot/` in this repo) and `model`. Configs for pilot targets live in `pilot/` (e.g. `pilot/temporal.json`).
 
 ## Limitations
 
 - The doc model comes from an LLM and can differ between uncached runs; the cache makes repeated runs on the same doc stable.
 - Cost is an estimate from list prices (cache writes 1.25x input, cache reads 0.1x input). With a server-side fallback, it is priced at the serving model's rate.
-- Packages outside `cmd/`, `internal/`, `pkg/` are ignored.
+- Without a config, packages outside `cmd/`, `internal/`, `pkg/` are ignored.

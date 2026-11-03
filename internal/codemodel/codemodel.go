@@ -25,12 +25,14 @@ type Location struct {
 
 func (l Location) String() string { return fmt.Sprintf("%s:%d", l.File, l.Line) }
 
-// Component is a top-level unit: cmd/x, internal/x, pkg/x or ext:<name>.
+// Component is a top-level unit: cmd/x, internal/x, pkg/x, a configured
+// component, or ext:<name>.
 type Component struct {
-	ID       string   `json:"id"`
-	External bool     `json:"external,omitempty"`
-	Packages []string `json:"packages,omitempty"` // repo-relative package dirs rolled up into this component
-	Anchor   Location `json:"anchor"`             // first file (package clause) or first import site for ext
+	ID         string   `json:"id"`
+	External   bool     `json:"external,omitempty"`
+	Deployable bool     `json:"deployable,omitempty"` // a main package sits at the component's root directory
+	Packages   []string `json:"packages,omitempty"`   // repo-relative package dirs rolled up into this component
+	Anchor     Location `json:"anchor"`               // first file (package clause) or first import site for ext
 }
 
 // Edge is a dependency between two components with every import site.
@@ -60,14 +62,98 @@ var externalCatalog = []struct{ prefix, id string }{
 	{"google.golang.org/grpc", "ext:grpc"},
 }
 
-// ExternalID returns the catalog ID for an import path, or "".
+// ComponentRule maps repo-relative directories to a component ID.
+type ComponentRule struct {
+	ID    string
+	Paths []string // a path matches itself and everything below it
+}
+
+// ExternalRule maps import-path prefixes to an external ID (ext:...).
+type ExternalRule struct {
+	ID       string
+	Prefixes []string
+}
+
+// Options customize the scan. The zero value is the default layout.
+type Options struct {
+	Components      []ComponentRule
+	External        []ExternalRule
+	Exclude         []string // repo-relative directories to skip
+	NoDefaultLayout bool     // only configured components; no cmd/internal/pkg rule
+}
+
+func underPath(dir, p string) bool {
+	p = strings.Trim(p, "/")
+	return p == "" || dir == p || strings.HasPrefix(dir, p+"/")
+}
+
+func matchPrefix(importPath, prefix string) bool {
+	return importPath == prefix || strings.HasPrefix(importPath, prefix+"/")
+}
+
+// ExternalID returns the built-in catalog ID for an import path, or "".
 func ExternalID(importPath string) string {
 	for _, e := range externalCatalog {
-		if importPath == e.prefix || strings.HasPrefix(importPath, e.prefix+"/") {
+		if matchPrefix(importPath, e.prefix) {
 			return e.id
 		}
 	}
 	return ""
+}
+
+// externalID checks configured rules (longest prefix wins) before the catalog.
+func (o Options) externalID(importPath string) string {
+	best, bestLen := "", -1
+	for _, r := range o.External {
+		for _, p := range r.Prefixes {
+			if matchPrefix(importPath, p) && len(p) > bestLen {
+				best, bestLen = r.ID, len(p)
+			}
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return ExternalID(importPath)
+}
+
+// componentOf applies configured rules (longest path wins), then the default layout.
+func (o Options) componentOf(dir string) string {
+	id, _ := o.component(dir)
+	return id
+}
+
+// component also returns the root directory of the matched rule (the
+// configured path, or cmd/x for the default layout).
+func (o Options) component(dir string) (id, root string) {
+	if o.excluded(dir) {
+		return "", ""
+	}
+	bestLen := -1
+	for _, r := range o.Components {
+		for _, p := range r.Paths {
+			p = strings.Trim(p, "/")
+			if underPath(dir, p) && len(p) > bestLen {
+				id, root, bestLen = r.ID, p, len(p)
+			}
+		}
+	}
+	if id != "" || o.NoDefaultLayout {
+		return id, root
+	}
+	if id = ComponentOf(dir); id != "" {
+		return id, id
+	}
+	return "", ""
+}
+
+func (o Options) excluded(dir string) bool {
+	for _, p := range o.Exclude {
+		if underPath(dir, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // ComponentOf maps a repo-relative package dir (slash separated) to its
@@ -111,9 +197,9 @@ func ReadModulePath(repo string) (string, error) {
 	return "", errors.New("go.mod has no module directive")
 }
 
-// Scan walks repo and builds the model. It skips _test.go files and any
-// vendor/, testdata/ or hidden directory below the root.
-func Scan(repo string) (*Model, error) {
+// Scan walks repo and builds the model. It skips _test.go files, excluded
+// directories and any vendor/, testdata/ or hidden directory below the root.
+func Scan(repo string, opts Options) (*Model, error) {
 	module, err := ReadModulePath(repo)
 	if err != nil {
 		return nil, err
@@ -145,6 +231,9 @@ func Scan(repo string) (*Model, error) {
 				if name == "vendor" || name == "testdata" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
 					return filepath.SkipDir
 				}
+				if rel, err := filepath.Rel(repo, p); err == nil && opts.excluded(filepath.ToSlash(rel)) {
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}
@@ -158,7 +247,7 @@ func Scan(repo string) (*Model, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		dir := path.Dir(rel)
-		from := ComponentOf(dir)
+		from, root := opts.component(dir)
 		if from == "" {
 			return nil
 		}
@@ -167,6 +256,11 @@ func Scan(repo string) (*Model, error) {
 			return fmt.Errorf("parse %s: %w", rel, err)
 		}
 		c := addComp(from, false, Location{File: rel, Line: fset.Position(f.Package).Line})
+		// Only a main package at the component root makes it a deployable; a
+		// helper tool nested deeper (e.g. a replay tester) does not.
+		if f.Name.Name == "main" && dir == root {
+			c.Deployable = true
+		}
 		if !pkgSeen[from][dir] {
 			pkgSeen[from][dir] = true
 			c.Packages = append(c.Packages, dir)
@@ -179,8 +273,8 @@ func Scan(repo string) (*Model, error) {
 			loc := Location{File: rel, Line: fset.Position(imp.Pos()).Line}
 			var to string
 			if ip == module || strings.HasPrefix(ip, module+"/") {
-				to = ComponentOf(strings.TrimPrefix(strings.TrimPrefix(ip, module), "/"))
-			} else if id := ExternalID(ip); id != "" {
+				to = opts.componentOf(strings.TrimPrefix(strings.TrimPrefix(ip, module), "/"))
+			} else if id := opts.externalID(ip); id != "" {
 				to = id
 				addComp(id, true, loc)
 			}
@@ -232,6 +326,12 @@ func less(a, b Location) bool {
 		return a.File < b.File
 	}
 	return a.Line < b.Line
+}
+
+// IsDeployable reports whether id names a component with a main package.
+func (m *Model) IsDeployable(id string) bool {
+	c, ok := m.Component(id)
+	return ok && c.Deployable
 }
 
 // IDs returns all component IDs in sorted order.

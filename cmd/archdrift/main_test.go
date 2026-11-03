@@ -18,6 +18,7 @@ const (
 	fixtureDoc   = fixtureRepo + "/design.md"
 	fixtureModel = fixtureRepo + "/docmodel.json"
 	fixtureWant  = fixtureRepo + "/expected.json"
+	fixtureLock  = fixtureRepo + "/design.lock.json"
 )
 
 type expected struct {
@@ -184,7 +185,7 @@ func TestCachedAPIPath(t *testing.T) {
 		}
 		return fakeExtractor{&calls}
 	}
-	args := []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--out", out}
+	args := []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--no-lock", "--out", out}
 	var so, se bytes.Buffer
 	if code := run(context.Background(), args, &so, &se, newExt); code != 1 {
 		t.Fatalf("first run exit %d: %s", code, se.String())
@@ -244,5 +245,218 @@ func TestErrorsExitTwo(t *testing.T) {
 		if code := run(context.Background(), args, &so, &se, nil); code != 2 {
 			t.Errorf("run(%v) = %d, want 2", args, code)
 		}
+	}
+}
+
+func failingExtractor(t *testing.T) func(string) docmodel.Extractor {
+	return func(string) docmodel.Extractor {
+		t.Fatal("the API extractor must not be used when a fresh lock exists")
+		return nil
+	}
+}
+
+func findingsOf(t *testing.T, out string) []string {
+	t.Helper()
+	var got reportJSON
+	b, err := os.ReadFile(filepath.Join(out, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	var s []string
+	for _, f := range got.Findings {
+		s = append(s, f.Type+" "+f.Subject)
+	}
+	return s
+}
+
+func expectedFindings(t *testing.T) []string {
+	t.Helper()
+	var want expected
+	b, _ := os.ReadFile(fixtureWant)
+	if err := json.Unmarshal(b, &want); err != nil {
+		t.Fatal(err)
+	}
+	var s []string
+	for _, f := range want.Findings {
+		s = append(s, f.Type+" "+f.Subject)
+	}
+	return s
+}
+
+// The committed fixture lock must be exactly what `archdrift lock` produces.
+func TestFixtureLockIsUpToDate(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "design.lock.json")
+	var so, se bytes.Buffer
+	code := run(context.Background(), []string{"lock", "--repo", fixtureRepo, "--doc", fixtureDoc, "--doc-model", fixtureModel, "--lock", p}, &so, &se, nil)
+	if code != 0 {
+		t.Fatalf("lock exit %d: %s", code, se.String())
+	}
+	got, _ := os.ReadFile(p)
+	want, err := os.ReadFile(fixtureLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("testdata/shop/design.lock.json is out of date; regenerate it with archdrift lock --doc-model")
+	}
+	for _, s := range []string{"Notifier", "(no code: will be MISSING_COMPONENT)", "pkg/metrics", "component Billing: quote not found in doc"} {
+		if !strings.Contains(so.String(), s) {
+			t.Errorf("lock review output missing %q:\n%s", s, so.String())
+		}
+	}
+}
+
+func TestCheckUsesLockWithoutAPI(t *testing.T) {
+	out := t.TempDir()
+	var so, se bytes.Buffer
+	code := run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--out", out}, &so, &se, failingExtractor(t))
+	if code != 1 {
+		t.Fatalf("exit %d: %s", code, se.String())
+	}
+	if got, want := findingsOf(t, out), expectedFindings(t); !reflect.DeepEqual(got, want) {
+		t.Fatalf("findings:\n got  %v\n want %v", got, want)
+	}
+	md, _ := os.ReadFile(filepath.Join(out, "report.md"))
+	if !bytes.Contains(md, []byte("lock (`../../testdata/shop/design.lock.json`)")) || !bytes.Contains(md, []byte("read from the reviewed lock file")) {
+		t.Errorf("report does not show the lock source:\n%s", md)
+	}
+}
+
+func TestStaleLockIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	doc, _ := os.ReadFile(fixtureDoc)
+	edited := filepath.Join(dir, "design.md")
+	os.WriteFile(edited, append(doc, []byte("\nA new paragraph.\n")...), 0o644)
+	var so, se bytes.Buffer
+	code := run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", edited, "--lock", fixtureLock, "--out", filepath.Join(dir, "out")}, &so, &se, failingExtractor(t))
+	if code != 2 || !strings.Contains(se.String(), "lock file is stale") {
+		t.Fatalf("exit %d, stderr %q", code, se.String())
+	}
+	// An explicit --lock that does not exist is an error, not a silent API call.
+	code = run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--lock", filepath.Join(dir, "nope.json"), "--out", filepath.Join(dir, "out")}, &so, &se, failingExtractor(t))
+	if code != 2 {
+		t.Fatalf("missing explicit lock: exit %d", code)
+	}
+}
+
+func TestLockNotesWhenCodeChanged(t *testing.T) {
+	l, err := docmodel.LoadLock(fixtureLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.CodeIDs = append([]string{"internal/legacy"}, l.CodeIDs[1:]...) // drop cmd/api, add internal/legacy
+	p := filepath.Join(t.TempDir(), "old.lock.json")
+	if err := docmodel.WriteLock(p, l); err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	var so, se bytes.Buffer
+	run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--lock", p, "--out", out}, &so, &se, failingExtractor(t))
+	md, _ := os.ReadFile(filepath.Join(out, "report.md"))
+	for _, s := range []string{"## Notes", "added since the lock was written: cmd/api", "removed since the lock was written: internal/legacy"} {
+		if !bytes.Contains(md, []byte(s)) {
+			t.Errorf("report missing %q", s)
+		}
+	}
+}
+
+func TestConfigAutoDetected(t *testing.T) {
+	dir := t.TempDir()
+	write := func(p, s string) {
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, p)), 0o755)
+		os.WriteFile(filepath.Join(dir, p), []byte(s), 0o644)
+	}
+	write("go.mod", "module example.com/mono\n")
+	write("services/billing/main.go", "package main\n\nimport _ \"example.com/mono/libs/ledger\"\n\nfunc main() {}\n")
+	write("libs/ledger/ledger.go", "package ledger\n\nimport _ \"example.com/mono/libs/db\"\n")
+	write("libs/db/db.go", "package db\n\nimport _ \"github.com/lib/pq\"\n")
+	write("archdrift.json", `{"components":[{"id":"billing","paths":["services/billing"]},{"id":"ledger","paths":["libs/ledger"]},{"id":"db","paths":["libs/db"]}],
+"default_layout":false,"transitive":{"required":true}}`)
+	write("design.md", "Billing records every charge in Postgres.\nBilling is the payments service.\nLedger keeps balances.\nDB wraps the driver.\nPostgres stores data.\n")
+	write("dm.json", `{"components":[
+ {"name":"Billing","code_ids":["billing"],"quote":"Billing is the payments service."},
+ {"name":"Ledger","code_ids":["ledger"],"quote":"Ledger keeps balances."},
+ {"name":"DB","code_ids":["db"],"quote":"DB wraps the driver."},
+ {"name":"Postgres","code_ids":["ext:postgres"],"quote":"Postgres stores data."}],
+"relations":[{"from":"Billing","to":"Postgres","kind":"required","protocol":"SQL","quote":"Billing records every charge in Postgres."}]}`)
+	out := filepath.Join(dir, "out")
+	var so, se bytes.Buffer
+	run(context.Background(), []string{"check", "--repo", dir, "--doc", filepath.Join(dir, "design.md"), "--doc-model", filepath.Join(dir, "dm.json"), "--out", out}, &so, &se, nil)
+	b, err := os.ReadFile(filepath.Join(out, "report.json"))
+	if err != nil {
+		t.Fatalf("%v: %s", err, se.String())
+	}
+	var r struct {
+		Config   string `json:"config"`
+		Findings []struct {
+			Type, Subject string
+		} `json:"findings"`
+	}
+	json.Unmarshal(b, &r)
+	if !strings.HasSuffix(r.Config, "archdrift.json") {
+		t.Errorf("config not recorded: %q", r.Config)
+	}
+	// Billing -> Postgres holds only through ledger -> db -> pq (transitive.required),
+	// so it must not be MISSING_EDGE; the hops themselves are undocumented.
+	var types []string
+	for _, f := range r.Findings {
+		types = append(types, f.Type+" "+f.Subject)
+	}
+	want := []string{"UNDOCUMENTED_EDGE Billing -> Ledger", "UNDOCUMENTED_EDGE DB -> Postgres", "UNDOCUMENTED_EDGE Ledger -> DB"}
+	if !reflect.DeepEqual(types, want) {
+		t.Errorf("findings = %v, want %v", types, want)
+	}
+
+	// A broken config is an error, not a silent default.
+	write("archdrift.json", `{"components":[{"id":"ext:bad","paths":["x"]}]}`)
+	if code := run(context.Background(), []string{"check", "--repo", dir, "--doc", filepath.Join(dir, "design.md"), "--doc-model", filepath.Join(dir, "dm.json"), "--out", out}, &so, &se, nil); code != 2 {
+		t.Errorf("bad config: exit %d", code)
+	}
+}
+
+func TestBaselineWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	bl := filepath.Join(dir, "baseline.json")
+	base := []string{"--repo", fixtureRepo, "--doc", fixtureDoc, "--baseline", bl, "--today", "2026-11-02", "--out", filepath.Join(dir, "out")}
+	var so, se bytes.Buffer
+
+	// A check with an explicit baseline that does not exist is an error (typo protection).
+	if code := run(context.Background(), append([]string{"check"}, base...), &so, &se, nil); code != 2 {
+		t.Fatalf("missing explicit baseline: exit %d", code)
+	}
+	if code := run(context.Background(), append([]string{"baseline"}, base...), &so, &se, nil); code != 0 {
+		t.Fatalf("baseline: exit %d: %s", code, se.String())
+	}
+	if !strings.Contains(so.String(), "5 accepted finding(s) (0 kept, 5 new)") {
+		t.Errorf("baseline output: %s", so.String())
+	}
+	// Everything accepted: check passes, reports the TODO reasons, and lists accepted drift.
+	so.Reset()
+	if code := run(context.Background(), append([]string{"check"}, base...), &so, &se, nil); code != 0 {
+		t.Fatalf("check with full baseline: exit %d: %s", code, so.String())
+	}
+	md, _ := os.ReadFile(filepath.Join(dir, "out", "report.md"))
+	for _, s := range []string{"## Accepted drift (baseline)", "Accepted by baseline (not counted above): 5", "has no real reason yet", "### 1. UNVERIFIABLE (info): Worker -> API Gateway"} {
+		if !bytes.Contains(md, []byte(s)) {
+			t.Errorf("report missing %q", s)
+		}
+	}
+	// Past the 90-day expiry, everything fails again.
+	late := append([]string{"check"}, base...)
+	late[len(late)-3] = "2027-02-01"
+	if code := run(context.Background(), late, &so, &se, nil); code != 1 {
+		t.Fatalf("after expiry: exit %d", code)
+	}
+}
+
+func TestReportJSONHasNoNullEvidence(t *testing.T) {
+	out := t.TempDir()
+	runFixture(t, out)
+	b, _ := os.ReadFile(filepath.Join(out, "report.json"))
+	if bytes.Contains(b, []byte(`"code_evidence": null`)) {
+		t.Fatal("code_evidence must be [] not null")
 	}
 }
