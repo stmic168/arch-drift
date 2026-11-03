@@ -237,6 +237,7 @@ func analyze(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 		return nil, err
 	}
 	verified, dropped := docmodel.Verify(raw, in.doc, in.code.IDs())
+	notes = append(notes, coverageNotes(in.code.Coverage)...)
 	return &analysis{in: in, verified: verified, dropped: dropped, res: drift.Diff(in.code, verified, o.diff),
 		usage: usage, lockPath: lockPath, notes: notes}, nil
 }
@@ -374,7 +375,22 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	if o.configPath != "" {
 		fmt.Fprintf(stdout, "config: %s\n", o.configPath)
 	}
-	fmt.Fprintf(stdout, "module %s: %d components, %d import edges\n\n", m.Module, len(m.Components), len(m.Edges))
+	fmt.Fprintf(stdout, "module %s: %d components, %d import edges\n", m.Module, len(m.Components), len(m.Edges))
+	fmt.Fprintf(stdout, "coverage: %d of %d Go packages (%d%%) belong to a component; %d shared\n", m.Coverage.Modeled, m.Coverage.Packages, m.Coverage.Percent(), len(m.Coverage.Shared))
+	for i, d := range m.Coverage.Unmodeled {
+		if i == 0 {
+			fmt.Fprint(stdout, "unmodeled:")
+		}
+		if i == 8 {
+			fmt.Fprint(stdout, " ...")
+			break
+		}
+		fmt.Fprintf(stdout, " %s (%d)", d.Dir, d.Packages)
+		if i == len(m.Coverage.Unmodeled)-1 {
+			fmt.Fprintln(stdout)
+		}
+	}
+	fmt.Fprintln(stdout)
 	out, in := map[string]int{}, map[string]int{}
 	for _, e := range m.Edges {
 		out[e.From]++
@@ -392,6 +408,25 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "%-32s %-10s %8d %6d %6d\n", c.ID, kind, len(c.Packages), out[c.ID], in[c.ID])
 	}
 	return exitOK
+}
+
+// lowCoverage is the share of packages below which check warns that most of
+// the repo is not modeled.
+const lowCoverage = 50
+
+func coverageNotes(c codemodel.Coverage) []string {
+	if c.Percent() >= lowCoverage {
+		return nil
+	}
+	var top []string
+	for i, d := range c.Unmodeled {
+		if i == 5 {
+			break
+		}
+		top = append(top, fmt.Sprintf("%s (%d)", d.Dir, d.Packages))
+	}
+	return []string{fmt.Sprintf("Only %d of %d Go packages (%d%%) belong to a component, so most of the repo is not checked. Largest unmodeled directories: %s. Map them in archdrift.json; `archdrift scan` shows what is modeled.",
+		c.Modeled, c.Packages, c.Percent(), strings.Join(top, ", "))}
 }
 
 // lockNotes explains code components that changed since the lock was made.

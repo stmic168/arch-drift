@@ -24,6 +24,8 @@ func TestLoadValid(t *testing.T) {
   "components": [{"id": "billing", "paths": ["services/billing"]}],
   "external": [{"id": "ext:s3", "prefixes": ["github.com/aws/aws-sdk-go-v2/service/s3"]}],
   "exclude": ["gen"],
+  "shared": ["pkg/store/storepb"],
+  "shared_protocol_packages": false,
   "default_layout": false,
   "transitive": {"required": true},
   "undocumented_components": {"fail": true, "ignore": ["pkg/ext*"]}
@@ -32,10 +34,12 @@ func TestLoadValid(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := codemodel.Options{
-		Components:      []codemodel.ComponentRule{{ID: "billing", Paths: []string{"services/billing"}}},
-		External:        []codemodel.ExternalRule{{ID: "ext:s3", Prefixes: []string{"github.com/aws/aws-sdk-go-v2/service/s3"}}},
-		Exclude:         []string{"gen"},
-		NoDefaultLayout: true,
+		Components:       []codemodel.ComponentRule{{ID: "billing", Paths: []string{"services/billing"}}},
+		External:         []codemodel.ExternalRule{{ID: "ext:s3", Prefixes: []string{"github.com/aws/aws-sdk-go-v2/service/s3"}}},
+		Exclude:          []string{"gen"},
+		NoDefaultLayout:  true,
+		Shared:           []string{"pkg/store/storepb"},
+		NoSharedProtocol: true,
 	}
 	if got := c.ScanOptions(); !reflect.DeepEqual(got, want) {
 		t.Errorf("ScanOptions = %+v", got)
