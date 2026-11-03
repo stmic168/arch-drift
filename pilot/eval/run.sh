@@ -3,13 +3,14 @@
 # by the pilot workflow (no API call) and score failing findings against the
 # hand-graded labels in labels.json.
 #
-# usage: pilot/eval/run.sh <archdrift binary> <work dir>
+# usage: [LOCKS=<dir>] pilot/eval/run.sh <archdrift binary> <work dir>
 # The work dir holds shallow clones at the pinned commits and the reports.
 set -euo pipefail
 
 bin=$(realpath "$1")
 work=$(mkdir -p "$2" && realpath "$2")
 here=$(cd "$(dirname "$0")" && pwd)
+locks=$(realpath "${LOCKS:-$here/locks}") # LOCKS=dir replays another set of pilot locks
 
 # case | repo | commit | config (relative to pilot/, or -) | docs (comma-separated)
 cases=(
@@ -31,7 +32,7 @@ for c in "${cases[@]}"; do
   fi
   # The pilot ran with the clone at ./target; doc paths are part of the lock hash.
   ln -sfn "$clone" "$dir/target"
-  args=(check --repo target --lock "$here/locks/$name.lock.json" --out out)
+  args=(check --repo target --lock "$locks/$name.lock.json" --out out)
   IFS=',' read -ra ds <<< "$docs"
   for d in "${ds[@]}"; do args+=(--doc "target/$d"); done
   [ "$config" != "-" ] && args+=(--config "$here/../$config")
