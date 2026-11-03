@@ -64,6 +64,8 @@ type Summary struct {
 	ByType   map[string]int `json:"by_type"`
 	Dropped  int            `json:"dropped_claims"`
 	Accepted int            `json:"accepted"` // findings accepted by the baseline (not counted in by_type)
+	Existing int            `json:"existing"` // diff mode: findings already on the base revision (not counted in by_type)
+	Fixed    int            `json:"fixed"`    // diff mode: failing base findings gone in this revision
 	ExitCode int            `json:"exit_code"`
 }
 
@@ -88,6 +90,8 @@ type Report struct {
 	Lock             string             `json:"lock,omitempty"`
 	Config           string             `json:"config,omitempty"`
 	Baseline         string             `json:"baseline,omitempty"`
+	Base             string             `json:"base,omitempty"`
+	Fixed            []string           `json:"fixed,omitempty"`
 	Notes            []string           `json:"notes"`
 }
 
@@ -103,6 +107,8 @@ type Input struct {
 	Notes                     []string // warnings shown at the top of the report
 	Config                    string   // config file path, when one was used
 	Baseline                  string   // baseline file path, when one was used
+	Base                      string   // diff mode: the base revision compared with
+	Fixed                     []string // diff mode: IDs of failing base findings that are gone
 	FailUndocumented          bool     // UNDOCUMENTED_COMPONENT fails the check
 	ReportUndocumentedEdges   bool     // UNDOCUMENTED_EDGE is informational
 }
@@ -113,9 +119,14 @@ func Build(in Input) *Report {
 	for _, t := range []string{drift.ForbiddenEdge, drift.MissingComponent, drift.MissingEdge, drift.UndocumentedEdge, drift.UndocumentedComponent, drift.Unverifiable} {
 		s.ByType[t] = 0
 	}
+	s.Fixed = len(in.Fixed)
 	for _, f := range in.Result.Findings {
 		if f.Accepted != nil {
 			s.Accepted++
+			continue
+		}
+		if f.Status == drift.StatusExisting {
+			s.Existing++
 			continue
 		}
 		s.ByType[f.Type]++
@@ -159,7 +170,7 @@ func Build(in Input) *Report {
 		Summary: s, Findings: in.Result.Findings, Dropped: dropped, Usage: u,
 		Code: in.Code, DocModel: in.DocModel, Graph: in.Result.Graph,
 		Missing: in.Result.MissingNodes, External: in.Result.ExternalNodes, FailUndocumented: in.FailUndocumented, ReportEdges: in.ReportUndocumentedEdges, Undoc: in.Result.UndocumentedNodes,
-		Lock: in.Lock, Notes: notes, Config: in.Config, Baseline: in.Baseline,
+		Lock: in.Lock, Notes: notes, Base: in.Base, Fixed: in.Fixed, Config: in.Config, Baseline: in.Baseline,
 	}
 }
 
@@ -210,6 +221,9 @@ func Markdown(r *Report) string {
 	if r.Baseline != "" {
 		fmt.Fprintf(&b, "- **Baseline:** `%s` (%d accepted)\n", r.Baseline, r.Summary.Accepted)
 	}
+	if r.Base != "" {
+		fmt.Fprintf(&b, "- **Compared with:** `%s` (only drift introduced or worsened since then fails; %d pre-existing, %d fixed)\n", r.Base, r.Summary.Existing, r.Summary.Fixed)
+	}
 	fmt.Fprintf(&b, "- **Code components:** %d, **import edges:** %d\n\n", len(r.Code.Components), len(r.Code.Edges))
 
 	if len(r.Notes) > 0 {
@@ -247,11 +261,14 @@ func Markdown(r *Report) string {
 	b.WriteString("\n")
 
 	b.WriteString("## Findings\n\n")
-	var active, accepted []drift.Finding
+	var active, accepted, existing []drift.Finding
 	for _, f := range r.Findings {
-		if f.Accepted != nil {
+		switch {
+		case f.Accepted != nil:
 			accepted = append(accepted, f)
-		} else {
+		case f.Status == drift.StatusExisting:
+			existing = append(existing, f)
+		default:
 			active = append(active, f)
 		}
 	}
@@ -259,7 +276,11 @@ func Markdown(r *Report) string {
 		b.WriteString("No findings.\n\n")
 	}
 	for i, f := range active {
-		fmt.Fprintf(&b, "### %d. %s (%s): %s\n\n", i+1, f.Type, f.Severity, f.Subject)
+		tag := ""
+		if f.Status != "" {
+			tag = " [" + f.Status + "]"
+		}
+		fmt.Fprintf(&b, "### %d. %s (%s)%s: %s\n\n", i+1, f.Type, f.Severity, tag, f.Subject)
 		b.WriteString(f.Message + "\n\n")
 		if f.From != "" || f.To != "" {
 			fmt.Fprintf(&b, "- Code IDs: `%s`", f.From)
@@ -270,6 +291,12 @@ func Markdown(r *Report) string {
 		}
 		if f.Protocol != "" {
 			fmt.Fprintf(&b, "- Protocol (from doc): %s\n", f.Protocol)
+		}
+		if len(f.NewEvidence) > 0 {
+			b.WriteString("- New in this change:\n")
+			for _, l := range f.NewEvidence {
+				fmt.Fprintf(&b, "  - `%s`\n", l)
+			}
 		}
 		if len(f.Code) > 0 {
 			b.WriteString("- Code evidence:\n")
@@ -291,6 +318,25 @@ func Markdown(r *Report) string {
 			quoteBlock(&b, f.DocQuote)
 		} else {
 			b.WriteString("- Doc quote: none (the doc is silent)\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if len(existing) > 0 {
+		fmt.Fprintf(&b, "## Pre-existing drift (on `%s`, not failing)\n\nThese findings already exist on the base revision and this change adds no new evidence for them.\n\n| Finding | Severity | Code evidence |\n|---|---|---|\n", r.Base)
+		for _, f := range existing {
+			ev := make([]string, len(f.Code))
+			for i, l := range f.Code {
+				ev[i] = "`" + l.String() + "`"
+			}
+			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", mdEscape(f.ID), f.Severity, strings.Join(ev, ", "))
+		}
+		b.WriteString("\n")
+	}
+	if len(r.Fixed) > 0 {
+		b.WriteString("## Fixed by this change\n\n")
+		for _, id := range r.Fixed {
+			fmt.Fprintf(&b, "- `%s`\n", id)
 		}
 		b.WriteString("\n")
 	}

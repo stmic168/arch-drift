@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,7 +31,7 @@ const (
 )
 
 const usage = `usage:
-  archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock] [--config <json>]
+  archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock] [--config <json>] [--base <git ref>]
   archdrift baseline --repo <path> --doc <design.md> [same flags as check]
   archdrift scan --repo <path> [--config <json>] [--json]
   archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--config <json>]
@@ -50,6 +51,9 @@ baseline  accepts every current failing finding into archdrift.baseline.json
   --doc-model  use a recorded doc model JSON instead of the API (ignores any lock)
   --lock       lock file path (default: next to the first doc, design.md -> design.lock.json)
   --no-lock    check only: ignore the lock and extract from the doc
+  --base       check only: git revision to compare with (e.g. origin/main); only
+               drift introduced or worsened since then fails, pre-existing drift
+               is listed but does not fail
   --config     config file (default: archdrift.json at the repo root, if present)
   --baseline   baseline file (default: archdrift.baseline.json at the repo root, if present)
 
@@ -57,9 +61,9 @@ Exit codes: check 0 no drift, 1 drift, 2 error; lock and baseline 0 written, 2 e
 `
 
 type options struct {
-	repo, out, model, docModel, lock, config, baseline, today string
-	docs                                                      docList
-	noLock                                                    bool
+	repo, out, model, docModel, lock, config, baseline, today, base string
+	docs                                                            docList
+	noLock                                                          bool
 
 	// resolved from the config file
 	configPath string
@@ -97,6 +101,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 		fs.BoolVar(&o.noLock, "no-lock", false, "")
 		fs.StringVar(&o.baseline, "baseline", "", "")
 		fs.StringVar(&o.today, "today", "", "") // YYYY-MM-DD, for reproducible runs and tests
+	}
+	if cmd == "check" {
+		fs.StringVar(&o.base, "base", "", "")
 	}
 	if err := fs.Parse(args[1:]); err != nil {
 		return exitError
@@ -219,6 +226,7 @@ func extract(ctx context.Context, ext docmodel.Extractor, in *inputs, model stri
 
 // analysis is the result of the check pipeline before baseline and report.
 type analysis struct {
+	raw      *docmodel.Model // doc model before verification, reused for the base revision
 	in       *inputs
 	verified *docmodel.Model
 	dropped  []docmodel.Dropped
@@ -267,7 +275,7 @@ func analyze(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 	}
 	verified, dropped := docmodel.Verify(raw, in.docs, in.code.IDs())
 	notes = append(notes, coverageNotes(in.code.Coverage)...)
-	return &analysis{in: in, verified: verified, dropped: dropped, res: drift.Diff(in.code, verified, o.diff),
+	return &analysis{raw: raw, in: in, verified: verified, dropped: dropped, res: drift.Diff(in.code, verified, o.diff),
 		usage: usage, lockPath: lockPath, notes: notes}, nil
 }
 
@@ -309,10 +317,28 @@ func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extra
 		notes = append(notes, drift.ApplyBaseline(res, bl, o.today)...)
 		shownBaseline = filepath.ToSlash(filepath.Clean(blPath))
 	}
+	var fixed []string
+	if o.base != "" {
+		baseRes, sha, err := baseResult(o, a.raw, in.docs)
+		if err != nil {
+			return fail(fmt.Errorf("base %s: %w", o.base, err))
+		}
+		fixed = drift.CompareBase(res, baseRes)
+		var nNew, nExisting int
+		for _, f := range res.Findings {
+			switch {
+			case f.Failing:
+				nNew++
+			case f.Status == drift.StatusExisting && f.Severity != drift.Info:
+				nExisting++
+			}
+		}
+		notes = append(notes, fmt.Sprintf("Compared with base %s (%s): %d failing finding(s) introduced or worsened by this change, %d pre-existing (not failing), %d fixed.", o.base, sha, nNew, nExisting, len(fixed)))
+	}
 	rep := report.Build(report.Input{
 		Repo: filepath.ToSlash(filepath.Clean(o.repo)), Doc: docLabel(in),
 		RequestedModel: o.model, Code: in.code, DocModel: verified, Dropped: dropped, Result: res, Usage: usage,
-		Lock: lockPath, Notes: notes, Config: o.configPath, Baseline: shownBaseline, FailUndocumented: o.diff.FailUndocumentedComponents, ReportUndocumentedEdges: o.diff.ReportUndocumentedEdges,
+		Lock: lockPath, Notes: notes, Base: o.base, Fixed: fixed, Config: o.configPath, Baseline: shownBaseline, FailUndocumented: o.diff.FailUndocumentedComponents, ReportUndocumentedEdges: o.diff.ReportUndocumentedEdges,
 	})
 	if err := report.Write(o.out, rep); err != nil {
 		return fail(fmt.Errorf("write report: %w", err))
@@ -335,6 +361,60 @@ func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extra
 		return exitDrift
 	}
 	return exitOK
+}
+
+// baseResult checks out ref in a temporary git worktree and runs the same
+// diff there, with the same doc model and options, so findings can be
+// compared with the base revision. It returns the base's short commit.
+func baseResult(o options, raw *docmodel.Model, docs []docmodel.Doc) (*drift.Result, string, error) {
+	abs, err := filepath.Abs(o.repo)
+	if err != nil {
+		return nil, "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	top, err := git(abs, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, "", fmt.Errorf("--base needs --repo inside a git repository: %w", err)
+	}
+	rel, err := filepath.Rel(top, abs)
+	if err != nil {
+		return nil, "", err
+	}
+	sha, err := git(top, "rev-parse", "--short", "--verify", o.base+"^{commit}")
+	if err != nil {
+		return nil, "", fmt.Errorf("unknown revision (fetch it first): %w", err)
+	}
+	tmp, err := os.MkdirTemp("", "archdrift-base-")
+	if err != nil {
+		return nil, "", err
+	}
+	defer os.RemoveAll(tmp)
+	wt := filepath.Join(tmp, "base")
+	if _, err := git(top, "worktree", "add", "--detach", "--quiet", wt, sha); err != nil {
+		return nil, "", err
+	}
+	defer git(top, "worktree", "remove", "--force", wt) //nolint:errcheck // best effort cleanup
+	code, err := codemodel.Scan(filepath.Join(wt, rel), o.scan)
+	if err != nil {
+		return nil, "", fmt.Errorf("scan base: %w", err)
+	}
+	verified, _ := docmodel.Verify(raw, docs, code.IDs())
+	return drift.Diff(code, verified, o.diff), sha, nil
+}
+
+func git(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+			return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(ee.Stderr)))
+		}
+		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // baselineDays is how long a new baseline entry stays accepted by default.
