@@ -1,0 +1,240 @@
+{
+  "version": 1,
+  "doc_sha256": "8260e16845ec40d32e3b505bf3d1822cab3428d0569659329d3eedb84015e47a",
+  "model": "claude-sonnet-5-5",
+  "code_ids": [
+    "cmd/cortex",
+    "cmd/query-tee",
+    "cmd/test-exporter",
+    "cmd/thanosconvert",
+    "ext:consul",
+    "ext:etcd",
+    "ext:grpc",
+    "ext:memcached",
+    "ext:objstore",
+    "ext:redis",
+    "ext:s3",
+    "pkg/alertmanager",
+    "pkg/api",
+    "pkg/chunk",
+    "pkg/compactor",
+    "pkg/configs",
+    "pkg/cortex",
+    "pkg/distributed_execution",
+    "pkg/distributor",
+    "pkg/engine",
+    "pkg/flusher",
+    "pkg/frontend",
+    "pkg/ha",
+    "pkg/ingester",
+    "pkg/overrides",
+    "pkg/parquetconverter",
+    "pkg/parser",
+    "pkg/purger",
+    "pkg/querier",
+    "pkg/querysharding",
+    "pkg/ring",
+    "pkg/ruler",
+    "pkg/scheduler",
+    "pkg/storage",
+    "pkg/storegateway",
+    "pkg/testexporter",
+    "pkg/tracing",
+    "pkg/util"
+  ],
+  "doc_model": {
+    "components": [
+      {
+        "name": "Compactor",
+        "code_ids": [
+          "pkg/compactor"
+        ],
+        "quote": "**Compactor** merges and deduplicates blocks."
+      },
+      {
+        "name": "Configs API",
+        "code_ids": [
+          "pkg/configs"
+        ],
+        "quote": "**Configs API** stores per-tenant rule and alertmanager configuration."
+      },
+      {
+        "name": "Distributor",
+        "code_ids": [
+          "pkg/distributor"
+        ],
+        "quote": "**Distributor** receives samples on the write path and forwards them."
+      },
+      {
+        "name": "HA tracker",
+        "code_ids": [
+          "pkg/ha"
+        ],
+        "quote": "**HA tracker** deduplicates samples from replicated Prometheus pairs."
+      },
+      {
+        "name": "Hash ring",
+        "code_ids": [
+          "pkg/ring"
+        ],
+        "quote": "**Hash ring** is the foundational library that shards work between replicas."
+      },
+      {
+        "name": "Ingester",
+        "code_ids": [
+          "pkg/ingester"
+        ],
+        "quote": "**Ingester** keeps recent samples in memory and writes blocks."
+      },
+      {
+        "name": "Overrides",
+        "code_ids": [
+          "pkg/overrides"
+        ],
+        "quote": "**Overrides** exposes per-tenant limits."
+      },
+      {
+        "name": "Purger",
+        "code_ids": [
+          "pkg/purger"
+        ],
+        "quote": "**Purger** deletes the data of removed tenants."
+      },
+      {
+        "name": "Querier",
+        "code_ids": [
+          "pkg/querier"
+        ],
+        "quote": "**Querier** evaluates PromQL queries on the read path."
+      },
+      {
+        "name": "Query frontend",
+        "code_ids": [
+          "pkg/frontend"
+        ],
+        "quote": "**Query frontend** splits and caches queries."
+      },
+      {
+        "name": "Query scheduler",
+        "code_ids": [
+          "pkg/scheduler"
+        ],
+        "quote": "**Query scheduler** queues queries between the query frontend and the queriers."
+      },
+      {
+        "name": "Ruler",
+        "code_ids": [
+          "pkg/ruler"
+        ],
+        "quote": "**Ruler** evaluates recording and alerting rules."
+      },
+      {
+        "name": "Storage layer",
+        "code_ids": [
+          "pkg/storage"
+        ],
+        "quote": "**Storage layer** wraps the block storage backends."
+      },
+      {
+        "name": "Store gateway",
+        "code_ids": [
+          "pkg/storegateway"
+        ],
+        "quote": "**Store gateway** serves blocks from long-term storage to queriers."
+      }
+    ],
+    "relations": [
+      {
+        "from": "Compactor",
+        "to": "Querier",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "The Compactor must not depend on the Querier."
+      },
+      {
+        "from": "Compactor",
+        "to": "Storage layer",
+        "kind": "required",
+        "protocol": "",
+        "quote": "The Compactor reads and writes blocks in the Storage layer."
+      },
+      {
+        "from": "Distributor",
+        "to": "Ingester",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "The Distributor sends samples to the Ingester."
+      },
+      {
+        "from": "Distributor",
+        "to": "Querier",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "The Distributor must not depend on the Querier: the write path stays independent of the read path."
+      },
+      {
+        "from": "Distributor",
+        "to": "Store gateway",
+        "kind": "forbidden",
+        "protocol": "",
+        "quote": "The Distributor must never talk to the Store gateway."
+      },
+      {
+        "from": "Hash ring",
+        "to": "Querier",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "The Hash ring is a foundational library and must not depend on the Querier."
+      },
+      {
+        "from": "Ingester",
+        "to": "Store gateway",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "The Ingester must not depend on the Store gateway."
+      },
+      {
+        "from": "Overrides",
+        "to": "Configs API",
+        "kind": "required",
+        "protocol": "",
+        "quote": "The Overrides component reads per-tenant limits from the Configs API."
+      },
+      {
+        "from": "Purger",
+        "to": "Compactor",
+        "kind": "required",
+        "protocol": "",
+        "quote": "The Purger must coordinate with the Compactor before deleting tenant blocks."
+      },
+      {
+        "from": "Querier",
+        "to": "Store gateway",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "The Querier fetches blocks through the Store gateway."
+      },
+      {
+        "from": "Query frontend",
+        "to": "Query scheduler",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "The Query frontend forwards queries to the Query scheduler."
+      },
+      {
+        "from": "Ruler",
+        "to": "Querier",
+        "kind": "required",
+        "protocol": "",
+        "quote": "The Ruler evaluates rules through the Querier."
+      },
+      {
+        "from": "Storage layer",
+        "to": "Ingester",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "The Storage layer must not depend on the Ingester."
+      }
+    ]
+  }
+}

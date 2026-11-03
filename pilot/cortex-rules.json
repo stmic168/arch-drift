@@ -1,3 +1,4 @@
 {
-  "undocumented_edges": {"fail": false}
+  "undocumented_edges": {"fail": false},
+  "strict_protocols": true
 }

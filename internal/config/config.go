@@ -48,6 +48,10 @@ type Config struct {
 		Fail   bool     `json:"fail"`   // fail the check (default: list only)
 		Ignore []string `json:"ignore"` // component ID patterns to skip, e.g. "pkg/ext*"
 	} `json:"undocumented_components"`
+	// StrictProtocols: a runtime protocol on a relation counts only when the
+	// doc quote names it; protocols the model inferred are ignored and the
+	// relation is checked by imports. Recommended for rules docs.
+	StrictProtocols bool `json:"strict_protocols"`
 	// UndocumentedEdges controls UNDOCUMENTED_EDGE findings.
 	UndocumentedEdges struct {
 		// Fail the check (default true). Set false for overview docs that
@@ -149,5 +153,6 @@ func (c *Config) DiffOptions() drift.Options {
 		FailUndocumentedComponents: c.UndocumentedComponents.Fail,
 		IgnoreUndocumented:         c.UndocumentedComponents.Ignore,
 		ReportUndocumentedEdges:    c.UndocumentedEdges.Fail != nil && !*c.UndocumentedEdges.Fail,
+		StrictProtocols:            c.StrictProtocols,
 	}
 }

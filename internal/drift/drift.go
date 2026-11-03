@@ -61,6 +61,12 @@ type Options struct {
 	// Off by default: architecture docs describe a few major components, so
 	// every utility package would otherwise be drift.
 	FailUndocumentedComponents bool
+	// StrictProtocols trusts a runtime protocol on a relation only when the
+	// relation's doc quote names it. A protocol the model inferred (e.g.
+	// "network" for "A coordinates with B") is ignored, so the relation is
+	// checked by imports. For rules docs, where a missed violation is worse
+	// than an unverifiable runtime call.
+	StrictProtocols bool
 	// ReportUndocumentedEdges makes UNDOCUMENTED_EDGE informational (non-failing).
 	// For overview docs that state few relations, where every unlisted import
 	// between documented components would otherwise fail the check.
@@ -126,6 +132,13 @@ func (r *Result) Failing() bool {
 
 // networkProtocols are runtime transports that static imports cannot prove.
 var networkProtocols = []string{"network", "http", "https", "rest", "grpc", "rpc", "graphql", "websocket", "queue", "kafka", "amqp", "rabbitmq", "nats", "sqs", "sns", "pubsub", "pub/sub", "event", "message", "async", "stream", "webhook", "tcp", "udp"}
+
+// ProtocolStated reports whether the relation's quote names its protocol
+// (case-insensitive), as opposed to the model inferring it.
+func ProtocolStated(r docmodel.Relation) bool {
+	p := strings.ToLower(strings.TrimSpace(r.Protocol))
+	return p != "" && strings.Contains(strings.ToLower(docmodel.NormalizeSpace(r.Quote)), p)
+}
 
 // IsNetworkProtocol reports whether the doc's protocol string names a runtime transport.
 func IsNetworkProtocol(p string) bool {
@@ -393,7 +406,11 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				Code:    evidence, DocQuote: r.Quote, DocFile: r.Source,
 			})
 		case docmodel.KindRequired:
-			if ok, why := Checkable(fc.CodeIDs, tc.CodeIDs, r.Protocol, code.IsDeployable); !ok {
+			proto := r.Protocol
+			if opts.StrictProtocols && !ProtocolStated(r) {
+				proto = ""
+			}
+			if ok, why := Checkable(fc.CodeIDs, tc.CodeIDs, proto, code.IsDeployable); !ok {
 				addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeUnverifiable, r.Protocol)
 				res.Findings = append(res.Findings, Finding{
 					ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
@@ -424,7 +441,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 					continue
 				}
 			}
-			if IsNetworkProtocol(r.Protocol) {
+			if IsNetworkProtocol(proto) {
 				// Components in one binary often call each other over HTTP/gRPC
 				// through generic clients, so a missing import proves nothing.
 				addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeUnverifiable, r.Protocol)
