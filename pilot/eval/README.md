@@ -12,6 +12,9 @@ pilot/eval/run.sh /tmp/archdrift /tmp/archdrift-eval
 - `locks/` holds the lock JSON printed by the pilot workflow runs after phase 0.5
   (thanos-design 41570777478, thanos-multi 41570780951, cortex 41570784103,
   temporal 41570787204).
+- `locks-p06/` holds the locks from the phase 0.6 prompt runs (41573056751,
+  41573059694, 41573062580, 41573065740); replay them with
+  `LOCKS=pilot/eval/locks-p06 pilot/eval/run.sh ...`.
 - `run.sh` shallow-clones each repository at the pinned commit (first run only),
   runs `archdrift check` from the lock, and calls `score.py`.
 - `labels.json` maps finding IDs to a grade: `TP` (real drift), `FP-mapping`

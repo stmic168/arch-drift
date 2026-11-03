@@ -1,8 +1,14 @@
 {
-  "_doc": "Hand-graded failing findings from the phase 0.5 pilot runs (see PR #5 and the grading notes in pilot/eval/README.md). Categories: TP, FP-mapping, FP-runtime, FP-actor, FP-config, NOISE. _important_undocumented lists real undocumented components that should rank near the top.",
+  "_doc": "Hand-graded failing findings from the phase 0.5 pilot runs (locks/) and the phase 0.6 prompt runs (locks-p06/) (see PR #5 and the grading notes in pilot/eval/README.md). Categories: TP, FP-mapping, FP-runtime, FP-actor, FP-config, NOISE. _important_undocumented lists real undocumented components that should rank near the top.",
   "_important_undocumented": {
-    "thanos-design": ["pkg/receive", "pkg/queryfrontend"],
-    "cortex": ["pkg/parquetconverter", "pkg/purger"]
+    "thanos-design": [
+      "pkg/receive",
+      "pkg/queryfrontend"
+    ],
+    "cortex": [
+      "pkg/parquetconverter",
+      "pkg/purger"
+    ]
   },
   "thanos-design": {
     "MISSING_COMPONENT:Alert Component": "FP-actor",
@@ -17,7 +23,8 @@
     "UNDOCUMENTED_EDGE:pkg/store->pkg/query": "NOISE",
     "UNDOCUMENTED_EDGE:pkg/ui->pkg/api": "FP-mapping",
     "UNDOCUMENTED_EDGE:pkg/ui->pkg/query": "FP-mapping",
-    "UNDOCUMENTED_EDGE:pkg/ui->pkg/rules": "NOISE"
+    "UNDOCUMENTED_EDGE:pkg/ui->pkg/rules": "NOISE",
+    "MISSING_EDGE:Rule -> Object Storage": "FP-mapping"
   },
   "thanos-multi": {
     "MISSING_EDGE:Rule -> Querier": "FP-runtime",
@@ -28,7 +35,13 @@
     "UNDOCUMENTED_EDGE:pkg/receive->pkg/block": "FP-mapping",
     "UNDOCUMENTED_EDGE:pkg/receive->pkg/store": "NOISE",
     "UNDOCUMENTED_EDGE:pkg/store->pkg/compact": "NOISE",
-    "UNDOCUMENTED_EDGE:pkg/store->pkg/query": "NOISE"
+    "UNDOCUMENTED_EDGE:pkg/store->pkg/query": "NOISE",
+    "MISSING_EDGE:Rule -> Object Storage": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/api->ext:objstore": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/receive->internal/cortex": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/receive->pkg/api": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/receive->pkg/shipper": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/rules->internal/cortex": "NOISE"
   },
   "cortex": {
     "MISSING_EDGE:Alertmanager -> Ruler": "FP-mapping",
@@ -57,7 +70,8 @@
     "UNDOCUMENTED_EDGE:pkg/ruler->pkg/ring": "FP-mapping",
     "UNDOCUMENTED_EDGE:pkg/scheduler->pkg/querier": "NOISE",
     "UNDOCUMENTED_EDGE:pkg/storegateway->pkg/configs": "FP-mapping",
-    "UNDOCUMENTED_EDGE:pkg/storegateway->pkg/ring": "TP"
+    "UNDOCUMENTED_EDGE:pkg/storegateway->pkg/ring": "TP",
+    "UNDOCUMENTED_EDGE:pkg/querier->ext:objstore": "FP-mapping"
   },
   "temporal": {
     "MISSING_EDGE:History Service -> Matching Service": "FP-config",
@@ -67,6 +81,8 @@
     "UNDOCUMENTED_EDGE:internal-worker->history": "FP-config",
     "UNDOCUMENTED_EDGE:internal-worker->matching": "FP-config",
     "UNDOCUMENTED_EDGE:matching->history": "FP-config",
-    "UNDOCUMENTED_EDGE:matching->internal-worker": "NOISE"
+    "UNDOCUMENTED_EDGE:matching->internal-worker": "NOISE",
+    "UNDOCUMENTED_EDGE:frontend->ext:temporal-sdk": "NOISE",
+    "UNDOCUMENTED_EDGE:internal-worker->ext:temporal-sdk": "NOISE"
   }
 }

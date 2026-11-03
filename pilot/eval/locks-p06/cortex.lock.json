@@ -1,0 +1,355 @@
+{
+  "version": 1,
+  "doc_sha256": "1dde90b1b6839036ffad1e6c301f5a320f90fb89b361c3298d219ce538f07954",
+  "model": "claude-sonnet-5-5",
+  "code_ids": [
+    "cmd/cortex",
+    "cmd/query-tee",
+    "cmd/test-exporter",
+    "cmd/thanosconvert",
+    "ext:consul",
+    "ext:etcd",
+    "ext:grpc",
+    "ext:memcached",
+    "ext:objstore",
+    "ext:redis",
+    "ext:s3",
+    "pkg/alertmanager",
+    "pkg/api",
+    "pkg/chunk",
+    "pkg/compactor",
+    "pkg/configs",
+    "pkg/cortex",
+    "pkg/distributed_execution",
+    "pkg/distributor",
+    "pkg/engine",
+    "pkg/flusher",
+    "pkg/frontend",
+    "pkg/ha",
+    "pkg/ingester",
+    "pkg/overrides",
+    "pkg/parquetconverter",
+    "pkg/parser",
+    "pkg/purger",
+    "pkg/querier",
+    "pkg/querysharding",
+    "pkg/ring",
+    "pkg/ruler",
+    "pkg/scheduler",
+    "pkg/storage",
+    "pkg/storegateway",
+    "pkg/testexporter",
+    "pkg/tracing",
+    "pkg/util"
+  ],
+  "doc_model": {
+    "components": [
+      {
+        "name": "Alertmanager",
+        "code_ids": [
+          "pkg/alertmanager"
+        ],
+        "quote": "The **alertmanager** is an **optional service** responsible for accepting alert notifications from the [ruler](#ruler)"
+      },
+      {
+        "name": "Cache backend",
+        "code_ids": [
+          "ext:memcached",
+          "ext:redis"
+        ],
+        "quote": "The result cache is compatible with any cortex caching backend (currently memcached, redis, and an in-memory cache).",
+        "external": true
+      },
+      {
+        "name": "Compactor",
+        "code_ids": [
+          "pkg/compactor"
+        ],
+        "quote": "The **compactor** is a service which is responsible for:"
+      },
+      {
+        "name": "Configs API",
+        "code_ids": [
+          "pkg/configs"
+        ],
+        "quote": "The **configs API** is an **optional service** managing the configuration of Rulers and Alertmanagers."
+      },
+      {
+        "name": "Consul",
+        "code_ids": [
+          "ext:consul"
+        ],
+        "quote": "* [Consul](https://www.consul.io)",
+        "external": true
+      },
+      {
+        "name": "Distributor",
+        "code_ids": [
+          "pkg/distributor"
+        ],
+        "quote": "The **distributor** service is responsible for handling incoming samples from Prometheus."
+      },
+      {
+        "name": "Etcd",
+        "code_ids": [
+          "ext:etcd"
+        ],
+        "quote": "* [Etcd](https://etcd.io)",
+        "external": true
+      },
+      {
+        "name": "Hash ring",
+        "code_ids": [
+          "pkg/ring"
+        ],
+        "quote": "A hash ring (stored in a key-value store) is used to achieve consistent hashing for the series sharding and replication across the ingesters."
+      },
+      {
+        "name": "High Availability Tracker",
+        "code_ids": [
+          "pkg/ha"
+        ],
+        "quote": "The distributor features a **High Availability (HA) Tracker**."
+      },
+      {
+        "name": "Ingester",
+        "code_ids": [
+          "pkg/ingester"
+        ],
+        "quote": "The **ingester** service is responsible for writing incoming series to a [long-term storage backend](#blocks-storage) on the write path and returning in-memory series samples for queries on the read path."
+      },
+      {
+        "name": "Object store",
+        "code_ids": [
+          "ext:objstore",
+          "ext:s3"
+        ],
+        "quote": "The only requirement is an object store for the Block files, which can be:",
+        "external": true
+      },
+      {
+        "name": "Overrides exporter",
+        "code_ids": [
+          "pkg/overrides"
+        ],
+        "quote": "[Overrides exporter](./guides/overrides-exporter.md) (optional)"
+      },
+      {
+        "name": "PostgreSQL",
+        "code_ids": [],
+        "quote": "Current supported backends are PostgreSQL and in-memory.",
+        "external": true
+      },
+      {
+        "name": "Prometheus",
+        "code_ids": [],
+        "quote": "Prometheus instances scrape samples from various targets and then push them to Cortex",
+        "external": true
+      },
+      {
+        "name": "Querier",
+        "code_ids": [
+          "pkg/querier"
+        ],
+        "quote": "The **querier** service handles queries using the [PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/) query language."
+      },
+      {
+        "name": "Query frontend",
+        "code_ids": [
+          "pkg/frontend"
+        ],
+        "quote": "The **query frontend** is an **optional service** providing the querier's API endpoints and can be used to accelerate the read path."
+      },
+      {
+        "name": "Query scheduler",
+        "code_ids": [
+          "pkg/scheduler"
+        ],
+        "quote": "Query Scheduler is an **optional** service that moves the internal queue from query frontend into a separate component."
+      },
+      {
+        "name": "Reverse proxy",
+        "code_ids": [],
+        "quote": "Request authentication and authorization are handled by an external reverse proxy.",
+        "external": true
+      },
+      {
+        "name": "Ruler",
+        "code_ids": [
+          "pkg/ruler"
+        ],
+        "quote": "The **ruler** is an **optional service** executing PromQL queries for recording rules and alerts."
+      },
+      {
+        "name": "Store gateway",
+        "code_ids": [
+          "pkg/storegateway"
+        ],
+        "quote": "The **store gateway** is the Cortex service responsible for querying series from blocks."
+      }
+    ],
+    "relations": [
+      {
+        "from": "Alertmanager",
+        "to": "Configs API",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "The **configs API** is an **optional service** managing the configuration of Rulers and Alertmanagers."
+      },
+      {
+        "from": "Alertmanager",
+        "to": "PostgreSQL",
+        "kind": "required",
+        "protocol": "SQL",
+        "quote": "Like the [ruler](#ruler), the alertmanager requires a database storing the per-tenant configuration."
+      },
+      {
+        "from": "Compactor",
+        "to": "Object store",
+        "kind": "required",
+        "protocol": "",
+        "quote": "Compacting multiple blocks of a given tenant into a single optimized larger block."
+      },
+      {
+        "from": "Configs API",
+        "to": "PostgreSQL",
+        "kind": "required",
+        "protocol": "SQL",
+        "quote": "Current supported backends are PostgreSQL and in-memory."
+      },
+      {
+        "from": "Distributor",
+        "to": "Hash ring",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "Distributors use consistent hashing, in conjunction with a configurable replication factor, to determine which ingester instance(s) should receive a given series."
+      },
+      {
+        "from": "Distributor",
+        "to": "High Availability Tracker",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "The distributor features a **High Availability (HA) Tracker**."
+      },
+      {
+        "from": "Distributor",
+        "to": "Ingester",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Valid samples are then split into batches and sent to multiple [ingesters](#ingester) in parallel."
+      },
+      {
+        "from": "Hash ring",
+        "to": "Consul",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "* Gossip [memberlist](https://github.com/hashicorp/memberlist)"
+      },
+      {
+        "from": "Hash ring",
+        "to": "Etcd",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "The supported KV stores for the hash ring are:"
+      },
+      {
+        "from": "High Availability Tracker",
+        "to": "Consul",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "The HA Tracker requires a key-value (KV) store to coordinate which replica is currently elected."
+      },
+      {
+        "from": "High Availability Tracker",
+        "to": "Etcd",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "The HA Tracker requires a key-value (KV) store to coordinate which replica is currently elected."
+      },
+      {
+        "from": "Ingester",
+        "to": "Hash ring",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "Ingesters contain a **lifecycler** which manages the lifecycle of an ingester and stores the **ingester state** in the [hash ring](#the-hash-ring)."
+      },
+      {
+        "from": "Ingester",
+        "to": "Object store",
+        "kind": "required",
+        "protocol": "",
+        "quote": "periodically flushed to the storage (by default, 2 hours)"
+      },
+      {
+        "from": "Prometheus",
+        "to": "Distributor",
+        "kind": "required",
+        "protocol": "HTTP",
+        "quote": "Prometheus instances scrape samples from various targets and then push them to Cortex"
+      },
+      {
+        "from": "Querier",
+        "to": "Ingester",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Queriers fetch series samples both from the ingesters and long-term storage."
+      },
+      {
+        "from": "Querier",
+        "to": "Query frontend",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "Queriers need to be configured with the query frontend address (via the `-querier.frontend-address` CLI flag) in order to allow them to connect to the query frontends."
+      },
+      {
+        "from": "Querier",
+        "to": "Query scheduler",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "(using `-frontend.scheduler-address` and `-querier.scheduler-address` options respectively)"
+      },
+      {
+        "from": "Querier",
+        "to": "Store gateway",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Queriers fetch series samples both from the ingesters and long-term storage."
+      },
+      {
+        "from": "Query frontend",
+        "to": "Cache backend",
+        "kind": "required",
+        "protocol": "",
+        "quote": "The result cache is compatible with any cortex caching backend (currently memcached, redis, and an in-memory cache)."
+      },
+      {
+        "from": "Query frontend",
+        "to": "Query scheduler",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "2) Query frontend forwards the query to a random query scheduler process."
+      },
+      {
+        "from": "Ruler",
+        "to": "Configs API",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "The **configs API** is an **optional service** managing the configuration of Rulers and Alertmanagers."
+      },
+      {
+        "from": "Ruler",
+        "to": "PostgreSQL",
+        "kind": "required",
+        "protocol": "SQL",
+        "quote": "The ruler requires a database storing the recording rules and alerts for each tenant."
+      },
+      {
+        "from": "Store gateway",
+        "to": "Object store",
+        "kind": "required",
+        "protocol": "",
+        "quote": "Periodically scanning the bucket (default)"
+      }
+    ]
+  }
+}

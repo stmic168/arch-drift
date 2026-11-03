@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "doc_sha256": "0bba3adfd5dc872d6f502a15c4177cd806cb239f91d86f32dfc751bed42088b1",
+  "model": "claude-sonnet-5-5",
+  "code_ids": [
+    "cmd/thanos",
+    "ext:grpc",
+    "ext:memcached",
+    "ext:objstore",
+    "internal/cortex",
+    "pkg/alert",
+    "pkg/api",
+    "pkg/block",
+    "pkg/cache",
+    "pkg/cacheutil",
+    "pkg/clientconfig",
+    "pkg/compact",
+    "pkg/compactv2",
+    "pkg/component",
+    "pkg/compressutil",
+    "pkg/dedup",
+    "pkg/discovery",
+    "pkg/errors",
+    "pkg/errutil",
+    "pkg/exemplars",
+    "pkg/extannotations",
+    "pkg/extflag",
+    "pkg/extgrpc",
+    "pkg/exthttp",
+    "pkg/extkingpin",
+    "pkg/extprom",
+    "pkg/extpromql",
+    "pkg/filter",
+    "pkg/gate",
+    "pkg/info",
+    "pkg/logging",
+    "pkg/logutil",
+    "pkg/losertree",
+    "pkg/metadata",
+    "pkg/model",
+    "pkg/pool",
+    "pkg/prober",
+    "pkg/promclient",
+    "pkg/query",
+    "pkg/queryfrontend",
+    "pkg/querysharding",
+    "pkg/receive",
+    "pkg/reloader",
+    "pkg/replicate",
+    "pkg/rules",
+    "pkg/runutil",
+    "pkg/server",
+    "pkg/shipper",
+    "pkg/status",
+    "pkg/store",
+    "pkg/strutil",
+    "pkg/symboltable",
+    "pkg/targets",
+    "pkg/tenancy",
+    "pkg/testutil",
+    "pkg/tls",
+    "pkg/tracing",
+    "pkg/ui",
+    "pkg/verifier"
+  ],
+  "doc_model": {
+    "components": [
+      {
+        "name": "Alert Component",
+        "code_ids": [],
+        "quote": "│ Alert Component │",
+        "external": true
+      },
+      {
+        "name": "Client",
+        "code_ids": [],
+        "quote": "clients can largely treat them as equivalent",
+        "external": true
+      },
+      {
+        "name": "Compactor",
+        "code_ids": [
+          "pkg/compact"
+        ],
+        "quote": "The compactor is a singleton process that does not participate in the Thanos cluster."
+      },
+      {
+        "name": "Dashboards",
+        "code_ids": [],
+        "quote": "│ Dashboards │",
+        "external": true
+      },
+      {
+        "name": "Object Storage",
+        "code_ids": [
+          "ext:objstore"
+        ],
+        "quote": "Those block files can be backed up to object storage and later be queried by another component (see below).",
+        "external": true
+      },
+      {
+        "name": "Prometheus",
+        "code_ids": [],
+        "quote": "The sidecar implements the gRPC service on top of Prometheus' [HTTP and remote-read APIs]",
+        "external": true
+      },
+      {
+        "name": "Query layer",
+        "code_ids": [
+          "pkg/query"
+        ],
+        "quote": "Queriers are stateless and horizontally scalable instances that implement PromQL on top of the Store APIs exposed in the cluster."
+      },
+      {
+        "name": "Rule",
+        "code_ids": [
+          "pkg/rules"
+        ],
+        "quote": "The rule node directly implements it on top of the Prometheus storage engine it is running."
+      },
+      {
+        "name": "Sidecar",
+        "code_ids": [
+          "pkg/shipper"
+        ],
+        "quote": "the Prometheus sidecar and rule nodes"
+      },
+      {
+        "name": "Store",
+        "code_ids": [
+          "pkg/store"
+        ],
+        "quote": "A store node acts as a gateway to block data that is stored in an object storage bucket."
+      },
+      {
+        "name": "Web UI",
+        "code_ids": [
+          "pkg/ui"
+        ],
+        "quote": "│ Web UI │",
+        "external": true
+      }
+    ],
+    "relations": [
+      {
+        "from": "Alert Component",
+        "to": "Query layer",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "│ Alert Component │"
+      },
+      {
+        "from": "Client",
+        "to": "Store",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Since store nodes and data sources expose the same gRPC Store API, clients can largely treat them as equivalent"
+      },
+      {
+        "from": "Compactor",
+        "to": "Object Storage",
+        "kind": "required",
+        "protocol": "object storage API",
+        "quote": "Instead, it is only pointed at an object storage bucket and continuously consolidates multiple smaller blocks into larger ones."
+      },
+      {
+        "from": "Dashboards",
+        "to": "Query layer",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "│ Dashboards │"
+      },
+      {
+        "from": "Query layer",
+        "to": "Rule",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Queriers are stateless and horizontally scalable instances that implement PromQL on top of the Store APIs exposed in the cluster."
+      },
+      {
+        "from": "Query layer",
+        "to": "Sidecar",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Queriers are stateless and horizontally scalable instances that implement PromQL on top of the Store APIs exposed in the cluster."
+      },
+      {
+        "from": "Query layer",
+        "to": "Store",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Queriers are stateless and horizontally scalable instances that implement PromQL on top of the Store APIs exposed in the cluster."
+      },
+      {
+        "from": "Rule",
+        "to": "Object Storage",
+        "kind": "required",
+        "protocol": "object storage",
+        "quote": "Those block files can be backed up to object storage and later be queried by another component (see below)."
+      },
+      {
+        "from": "Rule",
+        "to": "Query layer",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "Rule nodes in return can discover query nodes to evaluate recording and alerting rules."
+      },
+      {
+        "from": "Sidecar",
+        "to": "Object Storage",
+        "kind": "required",
+        "protocol": "object storage",
+        "quote": "Those block files can be backed up to object storage and later be queried by another component (see below)."
+      },
+      {
+        "from": "Sidecar",
+        "to": "Prometheus",
+        "kind": "required",
+        "protocol": "HTTP",
+        "quote": "The sidecar implements the gRPC service on top of Prometheus' [HTTP and remote-read APIs]"
+      },
+      {
+        "from": "Store",
+        "to": "Object Storage",
+        "kind": "required",
+        "protocol": "object storage API",
+        "quote": "It continuously synchronizes which blocks exist in the bucket and translates requests for metric data into object storage requests."
+      },
+      {
+        "from": "Web UI",
+        "to": "Query layer",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "│ Web UI │"
+      }
+    ]
+  }
+}
