@@ -25,7 +25,7 @@ go build -o archdrift ./cmd/archdrift
 
 ```bash
 ./archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock]
-./archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>]
+./archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--fresh]
 ./archdrift baseline --repo <path> --doc <design.md> [same flags as check]
 ./archdrift scan --repo <path> [--config <json>] [--json]
 ```
@@ -59,7 +59,8 @@ The LLM mapping can differ between uncached runs. To make `check` deterministic 
 
 Rules:
 
-- The lock stores the doc's SHA-256. If the doc changes, `check` exits 2 with "lock file is stale"; re-run `archdrift lock` and review the diff.
+- The lock stores the doc's SHA-256. If the doc changes, `check` exits 2 with "lock file is stale"; re-run `archdrift lock`.
+- Re-running `lock` keeps the review. If the doc is unchanged it does nothing (no API call). After a doc edit it extracts again and merges: reviewed claims whose quote is still in the doc are kept as they are, new ones are added, and claims whose quote is gone are removed. It prints "Changes since the previous lock" with `conflict` (reviewed claim kept, the model now suggests something else), `added`, `removed` and `kept` (still in the doc but not extracted this time) lines, so only the changes need review. `--fresh` ignores the previous lock.
 - If code components were added or removed since the lock was written, `check` still runs and adds a note at the top of the report. New components show as `UNDOCUMENTED_COMPONENT` until you re-lock; mappings to removed components are dropped as unknown code IDs.
 - The verifier runs on every `check`, so a hand edit with a quote that is not in the doc or an unknown code ID is dropped and listed, not trusted.
 - Without a lock next to the doc, `check` extracts live as before. `--no-lock` forces that, `--doc-model` overrides both.

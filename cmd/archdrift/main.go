@@ -66,7 +66,7 @@ Exit codes: check 0 no drift, 1 drift, 2 error; lock and baseline 0 written, 2 e
 type options struct {
 	repo, out, model, docModel, lock, config, baseline, today, base, sarifRoot string
 	docs                                                                       docList
-	noLock                                                                     bool
+	noLock, fresh                                                              bool
 
 	// resolved from the config file
 	configPath string
@@ -104,6 +104,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 		fs.BoolVar(&o.noLock, "no-lock", false, "")
 		fs.StringVar(&o.baseline, "baseline", "", "")
 		fs.StringVar(&o.today, "today", "", "") // YYYY-MM-DD, for reproducible runs and tests
+	}
+	if cmd == "lock" {
+		fs.BoolVar(&o.fresh, "fresh", false, "")
 	}
 	if cmd == "check" {
 		fs.StringVar(&o.base, "base", "", "")
@@ -577,6 +580,30 @@ func runLock(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 	if err != nil {
 		return fail(err)
 	}
+	p := o.lock
+	if p == "" {
+		p = docmodel.DefaultLockPath(o.docs[0])
+	}
+	ids := in.code.IDs()
+
+	// An existing lock holds the architect's review: keep it unless --fresh.
+	var prev *docmodel.Lock
+	if !o.fresh {
+		switch l, err := docmodel.LoadLock(p); {
+		case err == nil:
+			prev = l
+		case !errors.Is(err, fs.ErrNotExist):
+			return fail(fmt.Errorf("read previous lock (use --fresh to replace it): %w", err))
+		}
+	}
+	if prev != nil && prev.DocSHA256 == docmodel.DocHash(in.doc) {
+		fmt.Fprintf(stdout, "archdrift: %s is up to date with the doc; nothing to do (no API call). Use --fresh to re-extract from scratch.\n", p)
+		for _, n := range lockNotes(prev, ids) {
+			fmt.Fprintf(stdout, "note: %s\n", n)
+		}
+		return exitOK
+	}
+
 	ext := apiExtractor()
 	if o.docModel != "" {
 		ext = docmodel.FileExtractor{Path: o.docModel}
@@ -585,8 +612,11 @@ func runLock(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 	if err != nil {
 		return fail(err)
 	}
-	ids := in.code.IDs()
 	verified, dropped := docmodel.Verify(raw, in.docs, ids)
+	var changes []docmodel.Change
+	if prev != nil {
+		verified, changes = docmodel.MergeLock(prev.DocModel, raw, in.docs, ids)
+	}
 	if len(verified.Components) == 0 {
 		return fail(errors.New("no component survived verification; nothing to lock"))
 	}
@@ -594,15 +624,31 @@ func runLock(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 	if usage.Source == "recorded" {
 		model = "recorded"
 	}
-	p := o.lock
-	if p == "" {
-		p = docmodel.DefaultLockPath(o.docs[0])
-	}
 	if err := docmodel.WriteLock(p, docmodel.NewLock(in.doc, ids, model, verified)); err != nil {
 		return fail(fmt.Errorf("write lock: %w", err))
 	}
 	writeLockReview(stdout, p, model, usage, verified, dropped, ids)
+	if prev != nil {
+		writeLockChanges(stdout, changes)
+	}
 	return exitOK
+}
+
+// writeLockChanges prints what a re-lock changed relative to the reviewed lock.
+func writeLockChanges(w io.Writer, changes []docmodel.Change) {
+	fmt.Fprintln(w, "\nChanges since the previous lock (reviewed claims that still match the doc were kept):")
+	if len(changes) == 0 {
+		fmt.Fprintln(w, "  none")
+		return
+	}
+	for _, c := range changes {
+		detail := ""
+		if c.Detail != "" {
+			detail = ": " + c.Detail
+		}
+		fmt.Fprintf(w, "  %-8s %s %s%s\n", c.Kind, c.Claim, c.Name, detail)
+	}
+	fmt.Fprintln(w, "Review the conflicts: edit the lock to take the model's suggestion if it is right.")
 }
 
 // writeLockReview prints what the architect should check before committing the lock.
