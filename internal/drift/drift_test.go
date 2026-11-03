@@ -238,18 +238,23 @@ func TestMissingEndpointRelationIsUnverifiable(t *testing.T) {
 	}
 }
 
-func TestUndocumentedComponentsRankedByImporters(t *testing.T) {
+func TestUndocumentedComponentsRankApplicationsFirst(t *testing.T) {
+	// pkg/feature imports three components and is imported only by the
+	// wiring: an application component. pkg/util is imported by everyone.
 	code := &codemodel.Model{
-		Components: []codemodel.Component{comp("cmd/api"), comp("internal/a"), comp("pkg/big"), comp("pkg/small"), comp("pkg/used")},
-		Edges:      []codemodel.Edge{edge("cmd/api", "pkg/used", 1), edge("internal/a", "pkg/used", 2)},
+		Components: []codemodel.Component{comp("cmd/app"), comp("internal/a"), comp("internal/b"), comp("pkg/feature"), comp("pkg/util"), comp("pkg/idle"), comp("ext:grpc")},
+		Edges: []codemodel.Edge{
+			edge("cmd/app", "pkg/feature", 1), edge("cmd/app", "pkg/util", 2),
+			edge("pkg/feature", "internal/a", 3), edge("pkg/feature", "internal/b", 4), edge("pkg/feature", "pkg/util", 5),
+			edge("internal/a", "pkg/util", 6), edge("internal/b", "pkg/util", 7), edge("internal/a", "ext:grpc", 8),
+		},
 	}
-	code.Components[2].Packages = []string{"pkg/big", "pkg/big/x", "pkg/big/y"}
-	doc := &docmodel.Model{Components: []docmodel.Component{dc("API", "cmd/api"), dc("A", "internal/a")}}
+	doc := &docmodel.Model{Components: []docmodel.Component{dc("App", "cmd/app"), dc("A", "internal/a"), dc("B", "internal/b")}}
 	var got []string
 	for _, f := range Diff(code, doc, Options{}).Findings {
 		got = append(got, f.Subject)
 	}
-	if want := []string{"pkg/used", "pkg/big", "pkg/small"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"pkg/feature", "pkg/idle", "ext:grpc", "pkg/util"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("order = %v, want %v", got, want)
 	}
 }

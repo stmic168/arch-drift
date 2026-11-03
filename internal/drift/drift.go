@@ -256,12 +256,10 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 			})
 		}
 	}
-	importers := map[string]map[string]bool{}
-	for _, e := range code.Edges {
-		if importers[e.To] == nil {
-			importers[e.To] = map[string]bool{}
-		}
-		importers[e.To][e.From] = true
+	importers, imports := map[string]int{}, map[string]int{}
+	for _, e := range code.Edges { // edges are unique per (from, to)
+		importers[e.To]++
+		imports[e.From]++
 	}
 	for _, cc := range code.Components {
 		if len(owners[cc.ID]) > 0 || opts.ignoredUndocumented(cc.ID) {
@@ -272,11 +270,15 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 		if opts.FailUndocumentedComponents {
 			sev = Low
 		}
-		n := len(importers[cc.ID])
+		// Rank application components above utilities: a feature or service
+		// imports many components and is imported by few (often only the
+		// wiring), a utility the other way round. The pilot showed that
+		// ranking by importers buried Thanos' Receive at 33 of 44.
+		in, out := importers[cc.ID], imports[cc.ID]
 		res.Findings = append(res.Findings, Finding{
 			ID: UndocumentedComponent + ":" + cc.ID, Type: UndocumentedComponent, Severity: sev, Failing: opts.FailUndocumentedComponents,
-			Subject: cc.ID, From: cc.ID, Weight: n*100 + len(cc.Packages),
-			Message: fmt.Sprintf("Code component %s (%d package(s), imported by %d component(s)) is not described in the doc.", cc.ID, len(cc.Packages), n),
+			Subject: cc.ID, From: cc.ID, Weight: (out-in)*1000 + out,
+			Message: fmt.Sprintf("Code component %s (%d package(s), imports %d component(s), imported by %d) is not described in the doc.", cc.ID, len(cc.Packages), out, in),
 			Code:    []codemodel.Location{cc.Anchor},
 		})
 	}
