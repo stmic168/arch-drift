@@ -125,7 +125,7 @@ func (r *Result) Failing() bool {
 }
 
 // networkProtocols are runtime transports that static imports cannot prove.
-var networkProtocols = []string{"http", "https", "rest", "grpc", "rpc", "graphql", "websocket", "queue", "kafka", "amqp", "rabbitmq", "nats", "sqs", "sns", "pubsub", "pub/sub", "event", "message", "async", "stream", "webhook", "tcp", "udp"}
+var networkProtocols = []string{"network", "http", "https", "rest", "grpc", "rpc", "graphql", "websocket", "queue", "kafka", "amqp", "rabbitmq", "nats", "sqs", "sns", "pubsub", "pub/sub", "event", "message", "async", "stream", "webhook", "tcp", "udp"}
 
 // IsNetworkProtocol reports whether the doc's protocol string names a runtime transport.
 func IsNetworkProtocol(p string) bool {
