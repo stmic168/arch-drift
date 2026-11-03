@@ -36,7 +36,8 @@ const usage = `usage:
   archdrift scan --repo <path> [--config <json>] [--json]
   archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--config <json>]
 
-check  compares code with the doc and writes <out>/report.md and report.json.
+check  compares code with the doc and writes <out>/report.md, report.json and
+       report.sarif (for GitHub code scanning).
 lock   extracts the doc model once and writes a lock file to review and commit.
 scan   prints the code model (components, deployables, import edges) without
        reading any doc; use it to write or check archdrift.json.
@@ -51,6 +52,8 @@ baseline  accepts every current failing finding into archdrift.baseline.json
   --doc-model  use a recorded doc model JSON instead of the API (ignores any lock)
   --lock       lock file path (default: next to the first doc, design.md -> design.lock.json)
   --no-lock    check only: ignore the lock and extract from the doc
+  --sarif-root check only: directory SARIF paths are relative to (default --repo);
+               set it to the checkout root when --repo is a subdirectory
   --base       check only: git revision to compare with (e.g. origin/main); only
                drift introduced or worsened since then fails, pre-existing drift
                is listed but does not fail
@@ -61,9 +64,9 @@ Exit codes: check 0 no drift, 1 drift, 2 error; lock and baseline 0 written, 2 e
 `
 
 type options struct {
-	repo, out, model, docModel, lock, config, baseline, today, base string
-	docs                                                            docList
-	noLock                                                          bool
+	repo, out, model, docModel, lock, config, baseline, today, base, sarifRoot string
+	docs                                                                       docList
+	noLock                                                                     bool
 
 	// resolved from the config file
 	configPath string
@@ -104,6 +107,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 	}
 	if cmd == "check" {
 		fs.StringVar(&o.base, "base", "", "")
+		fs.StringVar(&o.sarifRoot, "sarif-root", "", "")
 	}
 	if err := fs.Parse(args[1:]); err != nil {
 		return exitError
@@ -342,6 +346,13 @@ func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extra
 	})
 	if err := report.Write(o.out, rep); err != nil {
 		return fail(fmt.Errorf("write report: %w", err))
+	}
+	root := o.sarifRoot
+	if root == "" {
+		root = o.repo
+	}
+	if err := report.WriteSARIF(o.out, rep, root, o.repo, in.docs); err != nil {
+		return fail(fmt.Errorf("write sarif: %w", err))
 	}
 	verdict := "no drift"
 	if rep.Summary.Drift {

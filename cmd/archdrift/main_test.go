@@ -155,7 +155,7 @@ func TestDeterministicOutput(t *testing.T) {
 	if runFixture(t, a) != 1 || runFixture(t, b) != 1 {
 		t.Fatal("unexpected exit code")
 	}
-	for _, name := range []string{"report.md", "report.json"} {
+	for _, name := range []string{"report.md", "report.json", "report.sarif"} {
 		x, err := os.ReadFile(filepath.Join(a, name))
 		if err != nil {
 			t.Fatal(err)
@@ -602,4 +602,85 @@ func TestBaseDiffMode(t *testing.T) {
 	if strings.Count(string(wt), "\n") != 1 {
 		t.Errorf("worktrees left behind:\n%s", wt)
 	}
+}
+
+func TestSARIF(t *testing.T) {
+	out := t.TempDir()
+	if code := runFixture(t, out); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	type result struct {
+		RuleID    string `json:"ruleId"`
+		Level     string `json:"level"`
+		Locations []struct {
+			PhysicalLocation struct {
+				ArtifactLocation struct{ URI string } `json:"artifactLocation"`
+				Region           struct {
+					StartLine int `json:"startLine"`
+				} `json:"region"`
+			} `json:"physicalLocation"`
+		} `json:"locations"`
+		PartialFingerprints map[string]string `json:"partialFingerprints"`
+	}
+	var log struct {
+		Version string `json:"version"`
+		Runs    []struct {
+			Tool struct {
+				Driver struct {
+					Rules []struct{ ID string } `json:"rules"`
+				} `json:"driver"`
+			} `json:"tool"`
+			Results []result `json:"results"`
+		} `json:"runs"`
+	}
+	read := func(dir string) {
+		b, err := os.ReadFile(filepath.Join(dir, "report.sarif"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &log); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read(out)
+	if log.Version != "2.1.0" || len(log.Runs) != 1 || len(log.Runs[0].Tool.Driver.Rules) != 6 {
+		t.Fatalf("sarif header: %+v", log)
+	}
+	byID := map[string]result{}
+	for _, r := range log.Runs[0].Results {
+		byID[r.PartialFingerprints["archdriftFindingId/v1"]] = r
+	}
+	loc := func(id string) (string, int, string) {
+		r := byID[id]
+		if len(r.Locations) == 0 {
+			return "", 0, r.Level
+		}
+		p := r.Locations[0].PhysicalLocation
+		return p.ArtifactLocation.URI, p.Region.StartLine, r.Level
+	}
+	check := func(id, uri string, line int, level string) {
+		t.Helper()
+		gu, gl, glv := loc(id)
+		if gu != uri || gl != line || glv != level {
+			t.Errorf("%s: %s:%d %s, want %s:%d %s", id, gu, gl, glv, uri, line, level)
+		}
+	}
+	check("FORBIDDEN_EDGE:API Gateway -> Store", "cmd/api/main.go", 10, "error")
+	check("UNDOCUMENTED_EDGE:internal/orders->ext:postgres", "internal/orders/repo/repo.go", 5, "warning")
+	check("UNDOCUMENTED_COMPONENT:pkg/metrics", "pkg/metrics/metrics.go", 2, "note")
+	// No code evidence: the location is the quote's line in the doc.
+	check("MISSING_COMPONENT:Notifier", "design.md", 17, "error")
+	check("MISSING_EDGE:Catalog -> Store", "design.md", 28, "error")
+
+	// With the checkout root one level up, paths gain the subdirectory.
+	out2 := t.TempDir()
+	var so, se bytes.Buffer
+	run(context.Background(), []string{"check", "--repo", fixtureRepo, "--doc", fixtureDoc, "--doc-model", fixtureModel, "--sarif-root", "../../testdata", "--out", out2}, &so, &se, nil)
+	read(out2)
+	byID = map[string]result{}
+	for _, r := range log.Runs[0].Results {
+		byID[r.PartialFingerprints["archdriftFindingId/v1"]] = r
+	}
+	check("FORBIDDEN_EDGE:API Gateway -> Store", "shop/cmd/api/main.go", 10, "error")
+	check("MISSING_COMPONENT:Notifier", "shop/design.md", 17, "error")
 }
