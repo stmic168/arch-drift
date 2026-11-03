@@ -277,7 +277,10 @@ func Markdown(r *Report) string {
 		} else {
 			b.WriteString("- Code evidence: none (the absence of the import is the finding)\n")
 		}
-		if f.DocQuote != "" {
+		if f.DocQuote != "" && f.DocFile != "" {
+			fmt.Fprintf(&b, "- Doc quote (`%s`):\n\n", f.DocFile)
+			quoteBlock(&b, f.DocQuote)
+		} else if f.DocQuote != "" {
 			b.WriteString("- Doc quote:\n\n")
 			quoteBlock(&b, f.DocQuote)
 		} else {

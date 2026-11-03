@@ -44,11 +44,11 @@ baseline  accepts every current failing finding into archdrift.baseline.json
        While the doc is unchanged, check reads the lock and never calls the API.
 
   --repo       Go repository root (must contain go.mod)
-  --doc        Markdown design document
+  --doc        Markdown design document; repeat it to read several files as one doc
   --out        output directory (default "archdrift-out"); the API cache lives in <out>/cache
   --model      Claude model for doc extraction (default "` + docmodel.DefaultModel + `")
   --doc-model  use a recorded doc model JSON instead of the API (ignores any lock)
-  --lock       lock file path (default: next to the doc, design.md -> design.lock.json)
+  --lock       lock file path (default: next to the first doc, design.md -> design.lock.json)
   --no-lock    check only: ignore the lock and extract from the doc
   --config     config file (default: archdrift.json at the repo root, if present)
   --baseline   baseline file (default: archdrift.baseline.json at the repo root, if present)
@@ -57,8 +57,9 @@ Exit codes: check 0 no drift, 1 drift, 2 error; lock and baseline 0 written, 2 e
 `
 
 type options struct {
-	repo, doc, out, model, docModel, lock, config, baseline, today string
-	noLock                                                         bool
+	repo, out, model, docModel, lock, config, baseline, today string
+	docs                                                      docList
+	noLock                                                    bool
 
 	// resolved from the config file
 	configPath string
@@ -86,7 +87,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 	fs.Usage = func() { fmt.Fprint(stderr, usage) }
 	var o options
 	fs.StringVar(&o.repo, "repo", "", "")
-	fs.StringVar(&o.doc, "doc", "", "")
+	fs.Var(&o.docs, "doc", "")
 	fs.StringVar(&o.out, "out", "archdrift-out", "")
 	fs.StringVar(&o.model, "model", docmodel.DefaultModel, "")
 	fs.StringVar(&o.docModel, "doc-model", "", "")
@@ -100,7 +101,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 	if err := fs.Parse(args[1:]); err != nil {
 		return exitError
 	}
-	if o.repo == "" || o.doc == "" || fs.NArg() > 0 || (o.noLock && o.lock != "") {
+	if o.repo == "" || len(o.docs) == 0 || fs.NArg() > 0 || (o.noLock && o.lock != "") {
 		fs.Usage()
 		return exitError
 	}
@@ -151,25 +152,53 @@ func resolveConfig(o *options) error {
 	}
 }
 
+// docList collects repeated --doc flags.
+type docList []string
+
+func (d *docList) String() string     { return strings.Join(*d, ",") }
+func (d *docList) Set(v string) error { *d = append(*d, v); return nil }
+
 // inputs holds what every command reads first.
 type inputs struct {
-	doc  string
+	docs []docmodel.Doc
+	doc  string // docs combined, as hashed, cached and sent to the extractor
 	code *codemodel.Model
 }
 
 func load(o options) (*inputs, error) {
-	b, err := os.ReadFile(o.doc)
-	if err != nil {
-		return nil, fmt.Errorf("read doc: %w", err)
+	in := &inputs{}
+	seen := map[string]bool{}
+	for _, p := range o.docs {
+		clean := filepath.ToSlash(filepath.Clean(p))
+		if seen[clean] {
+			return nil, fmt.Errorf("doc %s given twice", p)
+		}
+		seen[clean] = true
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return nil, fmt.Errorf("read doc: %w", err)
+		}
+		if len(b) == 0 {
+			return nil, fmt.Errorf("design doc %s is empty", p)
+		}
+		in.docs = append(in.docs, docmodel.Doc{Path: clean, Text: string(b)})
 	}
-	if len(b) == 0 {
-		return nil, errors.New("design doc is empty")
-	}
+	in.doc = docmodel.Combine(in.docs)
 	code, err := codemodel.Scan(o.repo, o.scan)
 	if err != nil {
 		return nil, fmt.Errorf("scan repo: %w", err)
 	}
-	return &inputs{doc: string(b), code: code}, nil
+	in.code = code
+	return in, nil
+}
+
+// docLabel is how the docs appear in the report.
+func docLabel(in *inputs) string {
+	paths := make([]string, len(in.docs))
+	for i, d := range in.docs {
+		paths[i] = d.Path
+	}
+	return strings.Join(paths, ", ")
 }
 
 func extract(ctx context.Context, ext docmodel.Extractor, in *inputs, model string) (*docmodel.Model, docmodel.Usage, error) {
@@ -216,7 +245,7 @@ func analyze(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 	case !o.noLock:
 		p := o.lock
 		if p == "" {
-			p = docmodel.DefaultLockPath(o.doc)
+			p = docmodel.DefaultLockPath(o.docs[0])
 		}
 		l, err := docmodel.LoadLock(p)
 		switch {
@@ -236,7 +265,7 @@ func analyze(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 	if err != nil {
 		return nil, err
 	}
-	verified, dropped := docmodel.Verify(raw, in.doc, in.code.IDs())
+	verified, dropped := docmodel.Verify(raw, in.docs, in.code.IDs())
 	notes = append(notes, coverageNotes(in.code.Coverage)...)
 	return &analysis{in: in, verified: verified, dropped: dropped, res: drift.Diff(in.code, verified, o.diff),
 		usage: usage, lockPath: lockPath, notes: notes}, nil
@@ -281,7 +310,7 @@ func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extra
 		shownBaseline = filepath.ToSlash(filepath.Clean(blPath))
 	}
 	rep := report.Build(report.Input{
-		Repo: filepath.ToSlash(filepath.Clean(o.repo)), Doc: filepath.ToSlash(filepath.Clean(o.doc)),
+		Repo: filepath.ToSlash(filepath.Clean(o.repo)), Doc: docLabel(in),
 		RequestedModel: o.model, Code: in.code, DocModel: verified, Dropped: dropped, Result: res, Usage: usage,
 		Lock: lockPath, Notes: notes, Config: o.configPath, Baseline: shownBaseline, FailUndocumented: o.diff.FailUndocumentedComponents,
 	})
@@ -460,7 +489,7 @@ func runLock(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 		return fail(err)
 	}
 	ids := in.code.IDs()
-	verified, dropped := docmodel.Verify(raw, in.doc, ids)
+	verified, dropped := docmodel.Verify(raw, in.docs, ids)
 	if len(verified.Components) == 0 {
 		return fail(errors.New("no component survived verification; nothing to lock"))
 	}
@@ -470,7 +499,7 @@ func runLock(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 	}
 	p := o.lock
 	if p == "" {
-		p = docmodel.DefaultLockPath(o.doc)
+		p = docmodel.DefaultLockPath(o.docs[0])
 	}
 	if err := docmodel.WriteLock(p, docmodel.NewLock(in.doc, ids, model, verified)); err != nil {
 		return fail(fmt.Errorf("write lock: %w", err))

@@ -460,3 +460,40 @@ func TestReportJSONHasNoNullEvidence(t *testing.T) {
 		t.Fatal("code_evidence must be [] not null")
 	}
 }
+
+func TestMultipleDocsAndCoverageNote(t *testing.T) {
+	dir := t.TempDir()
+	write := func(p, s string) {
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, p)), 0o755)
+		os.WriteFile(filepath.Join(dir, p), []byte(s), 0o644)
+	}
+	write("go.mod", "module example.com/m\n")
+	write("cmd/app/main.go", "package main\n\nimport _ \"example.com/m/internal/core\"\n\nfunc main() {}\n")
+	write("internal/core/core.go", "package core\n")
+	for _, d := range []string{"a", "b", "c"} { // three unmodeled packages: 2 of 5 modeled = 40%
+		write("service/"+d+"/x.go", "package "+d+"\n")
+	}
+	write("docs/overview.md", "The App is the CLI.\n")
+	write("docs/core.md", "Core holds the logic.\nThe App calls Core.\n")
+	write("dm.json", `{"components":[
+ {"name":"App","code_ids":["cmd/app"],"quote":"The App is the CLI."},
+ {"name":"Core","code_ids":["internal/core"],"quote":"Core holds the logic."}],
+"relations":[{"from":"App","to":"Core","kind":"forbidden","protocol":"","quote":"The App calls Core."}]}`)
+	out := filepath.Join(dir, "out")
+	var so, se bytes.Buffer
+	code := run(context.Background(), []string{"check", "--repo", dir, "--doc", filepath.Join(dir, "docs/overview.md"), "--doc", filepath.Join(dir, "docs/core.md"),
+		"--doc-model", filepath.Join(dir, "dm.json"), "--out", out}, &so, &se, nil)
+	if code != 1 {
+		t.Fatalf("exit %d: %s %s", code, so.String(), se.String())
+	}
+	md, _ := os.ReadFile(filepath.Join(out, "report.md"))
+	for _, s := range []string{"overview.md, ", "core.md`", "Doc quote (`" + filepath.ToSlash(filepath.Join(dir, "docs/core.md")) + "`)", "Only 2 of 5 Go packages (40%)", "service (3)"} {
+		if !bytes.Contains(md, []byte(s)) {
+			t.Errorf("report missing %q", s)
+		}
+	}
+	// The same file twice is an error.
+	if code := run(context.Background(), []string{"check", "--repo", dir, "--doc", filepath.Join(dir, "docs/core.md"), "--doc", filepath.Join(dir, "docs/core.md"), "--doc-model", filepath.Join(dir, "dm.json"), "--out", out}, &so, &se, nil); code != 2 {
+		t.Errorf("duplicate doc: exit %d", code)
+	}
+}

@@ -44,6 +44,7 @@ type Finding struct {
 	Message  string               `json:"message"`
 	Code     []codemodel.Location `json:"code_evidence"`       // file:line from code
 	DocQuote string               `json:"doc_quote,omitempty"` // verbatim from doc
+	DocFile  string               `json:"doc_file,omitempty"`  // file holding the quote, when several docs are read
 	Protocol string               `json:"protocol,omitempty"`
 	Weight   int                  `json:"weight,omitempty"`   // ranking for undocumented components: importers*100 + packages
 	Via      []string             `json:"via,omitempty"`      // component path when proven transitively
@@ -251,7 +252,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 			res.Findings = append(res.Findings, Finding{
 				ID: MissingComponent + ":" + c.Name, Type: MissingComponent, Severity: Medium, Failing: true,
 				Subject: c.Name, Message: fmt.Sprintf("Doc component %q has no matching package in code.", c.Name),
-				Code: []codemodel.Location{}, DocQuote: c.Quote,
+				Code: []codemodel.Location{}, DocQuote: c.Quote, DocFile: c.Source,
 			})
 		}
 	}
@@ -317,7 +318,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 			res.Findings = append(res.Findings, Finding{
 				ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
 				Subject: subject, From: strings.Join(fc.CodeIDs, ","), To: strings.Join(tc.CodeIDs, ","), Protocol: r.Protocol,
-				Message: "Not checked: " + strings.Join(why, "; ") + ".", Code: []codemodel.Location{}, DocQuote: r.Quote,
+				Message: "Not checked: " + strings.Join(why, "; ") + ".", Code: []codemodel.Location{}, DocQuote: r.Quote, DocFile: r.Source,
 			})
 			continue
 		}
@@ -344,7 +345,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 						ID: ForbiddenEdge + ":" + subject, Type: ForbiddenEdge, Severity: High, Failing: true,
 						Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
 						Message: fmt.Sprintf("Doc forbids %s depending on %s, and the code reaches it indirectly: %s.", r.From, r.To, strings.Join(via, " -> ")),
-						Code:    ev, DocQuote: r.Quote, Via: via,
+						Code:    ev, DocQuote: r.Quote, DocFile: r.Source, Via: via,
 					})
 					continue
 				}
@@ -360,7 +361,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				ID: ForbiddenEdge + ":" + subject, Type: ForbiddenEdge, Severity: High, Failing: true,
 				Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
 				Message: fmt.Sprintf("Doc forbids %s depending on %s, but the code imports it.", r.From, r.To),
-				Code:    evidence, DocQuote: r.Quote,
+				Code:    evidence, DocQuote: r.Quote, DocFile: r.Source,
 			})
 		case docmodel.KindRequired:
 			if ok, why := Checkable(fc.CodeIDs, tc.CodeIDs, r.Protocol, code.IsDeployable); !ok {
@@ -368,7 +369,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				res.Findings = append(res.Findings, Finding{
 					ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
 					Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
-					Message: "Not checked: " + why + ".", Code: evidence, DocQuote: r.Quote,
+					Message: "Not checked: " + why + ".", Code: evidence, DocQuote: r.Quote, DocFile: r.Source,
 				})
 				continue
 			}
@@ -393,7 +394,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 					ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
 					Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
 					Message: fmt.Sprintf("Not checked: no import from %s to %s, but the doc says they talk over %q, which can happen at runtime without one.", join(fc.CodeIDs), join(tc.CodeIDs), r.Protocol),
-					Code:    []codemodel.Location{}, DocQuote: r.Quote,
+					Code:    []codemodel.Location{}, DocQuote: r.Quote, DocFile: r.Source,
 				})
 				continue
 			}
@@ -402,7 +403,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				ID: MissingEdge + ":" + subject, Type: MissingEdge, Severity: Medium, Failing: true,
 				Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
 				Message: fmt.Sprintf("Doc requires %s to depend on %s, but no package of %s imports %s.", r.From, r.To, join(fc.CodeIDs), join(tc.CodeIDs)),
-				Code:    []codemodel.Location{}, DocQuote: r.Quote,
+				Code:    []codemodel.Location{}, DocQuote: r.Quote, DocFile: r.Source,
 			})
 		}
 	}
