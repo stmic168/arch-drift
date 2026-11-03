@@ -212,3 +212,18 @@ func TestIsShared(t *testing.T) {
 		}
 	}
 }
+
+func TestScanFollowsSymlinkedRoot(t *testing.T) {
+	link := filepath.Join(t.TempDir(), "target")
+	abs, _ := filepath.Abs(fixture)
+	if err := os.Symlink(abs, link); err != nil {
+		t.Skip("symlinks not supported:", err)
+	}
+	m, err := Scan(link, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Components) != 9 {
+		t.Fatalf("components via symlink = %d, want 9", len(m.Components))
+	}
+}

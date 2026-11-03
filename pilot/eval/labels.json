@@ -1,0 +1,72 @@
+{
+  "_doc": "Hand-graded failing findings from the phase 0.5 pilot runs (see PR #5 and the grading notes in pilot/eval/README.md). Categories: TP, FP-mapping, FP-runtime, FP-actor, FP-config, NOISE. _important_undocumented lists real undocumented components that should rank near the top.",
+  "_important_undocumented": {
+    "thanos-design": ["pkg/receive", "pkg/queryfrontend"],
+    "cortex": ["pkg/parquetconverter", "pkg/purger"]
+  },
+  "thanos-design": {
+    "MISSING_COMPONENT:Alert Component": "FP-actor",
+    "MISSING_EDGE:Rule -> Query layer": "FP-runtime",
+    "UNDOCUMENTED_EDGE:pkg/api->ext:objstore": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/compact->pkg/block": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/compactv2->pkg/block": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/dedup->pkg/compact": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/query->pkg/compact": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/shipper->pkg/block": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/store->pkg/compact": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/store->pkg/query": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/ui->pkg/api": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/ui->pkg/query": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/ui->pkg/rules": "NOISE"
+  },
+  "thanos-multi": {
+    "MISSING_EDGE:Rule -> Querier": "FP-runtime",
+    "MISSING_EDGE:Store -> Memcached": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/compact->pkg/block": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/query->pkg/compact": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/queryfrontend->pkg/compact": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/receive->pkg/block": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/receive->pkg/store": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/store->pkg/compact": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/store->pkg/query": "NOISE"
+  },
+  "cortex": {
+    "MISSING_EDGE:Alertmanager -> Ruler": "FP-mapping",
+    "MISSING_EDGE:High Availability Tracker -> Consul": "FP-mapping",
+    "MISSING_EDGE:High Availability Tracker -> Etcd": "FP-mapping",
+    "MISSING_EDGE:Querier -> Query frontend": "FP-runtime",
+    "MISSING_EDGE:Querier -> Query scheduler": "FP-runtime",
+    "MISSING_EDGE:Query frontend -> Result cache": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/alertmanager->ext:objstore": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/alertmanager->pkg/configs": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/alertmanager->pkg/ring": "TP",
+    "UNDOCUMENTED_EDGE:pkg/compactor->pkg/ring": "TP",
+    "UNDOCUMENTED_EDGE:pkg/distributor->pkg/querier": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/frontend->pkg/querier": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/frontend->pkg/storegateway": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/ha->pkg/ring": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/ingester->pkg/configs": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/overrides->ext:objstore": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/querier->pkg/configs": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/querier->pkg/ring": "TP",
+    "UNDOCUMENTED_EDGE:pkg/querier->pkg/storegateway": "TP",
+    "UNDOCUMENTED_EDGE:pkg/ring->pkg/querier": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/ruler->ext:objstore": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/ruler->pkg/configs": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/ruler->pkg/querier": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/ruler->pkg/ring": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/scheduler->pkg/querier": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/storegateway->pkg/configs": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/storegateway->pkg/ring": "TP"
+  },
+  "temporal": {
+    "MISSING_EDGE:History Service -> Matching Service": "FP-config",
+    "UNDOCUMENTED_EDGE:frontend->history": "FP-config",
+    "UNDOCUMENTED_EDGE:frontend->internal-worker": "NOISE",
+    "UNDOCUMENTED_EDGE:history->internal-worker": "NOISE",
+    "UNDOCUMENTED_EDGE:internal-worker->history": "FP-config",
+    "UNDOCUMENTED_EDGE:internal-worker->matching": "FP-config",
+    "UNDOCUMENTED_EDGE:matching->history": "FP-config",
+    "UNDOCUMENTED_EDGE:matching->internal-worker": "NOISE"
+  }
+}

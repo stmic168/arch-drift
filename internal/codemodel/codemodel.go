@@ -276,6 +276,10 @@ func Scan(repo string, opts Options) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	// WalkDir does not follow a symlinked root; resolve it so --repo can be a link.
+	if resolved, err := filepath.EvalSymlinks(repo); err == nil {
+		repo = resolved
+	}
 	fset := token.NewFileSet()
 	comps := map[string]*Component{}
 	pkgSeen := map[string]map[string]bool{}
