@@ -357,6 +357,19 @@ func Markdown(r *Report) string {
 		b.WriteString("\n")
 	}
 
+	if sug := Suggestions(r); len(sug) > 0 {
+		b.WriteString("## Suggested doc updates\n\nConcrete edits for the findings above, generated from the evidence (no LLM). Review before applying.\n\n")
+		for _, x := range sug {
+			fmt.Fprintf(&b, "- %s\n", x)
+		}
+		b.WriteString("\n")
+	}
+	if ab := AsBuilt(r); ab != "" {
+		b.WriteString("### As-built diagram\n\nThe documented components with the dependencies the code has between them today, under the doc's names. Paste it into the doc to describe the code as it is.\n\n")
+		b.WriteString(ab)
+		b.WriteString("\n")
+	}
+
 	b.WriteString("## Diagram\n\n")
 	b.WriteString(Mermaid(r))
 	b.WriteString("\nLegend: green = documented and present; red = forbidden but present; orange dashed = documented but missing; blue = present but undocumented; grey dotted = runtime relation, not checkable; grey = context. Yellow nodes are undocumented; red dashed nodes and edges are in the doc only; grey rounded nodes are outside the codebase.\n\n")

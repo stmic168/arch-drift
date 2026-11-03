@@ -781,3 +781,31 @@ func TestIncrementalLock(t *testing.T) {
 		t.Error("--fresh must not merge")
 	}
 }
+
+func TestSuggestedDocUpdates(t *testing.T) {
+	out := t.TempDir()
+	runFixture(t, out)
+	md, _ := os.ReadFile(filepath.Join(out, "report.md"))
+	for _, s := range []string{
+		"## Suggested doc updates",
+		"**Code:** remove the dependency API Gateway -> Store (`cmd/api/main.go:10`), which the doc forbids.",
+		"**Doc:** \"Notifier\" has no code.",
+		"**Code or doc:** add the dependency Catalog -> Store",
+		"**Doc:** describe the dependency Orders -> PostgreSQL (`internal/orders/repo/repo.go:5`)",
+		"### As-built diagram",
+		"  c_api_gateway --> c_store\n",
+		"  c_orders --> c_postgresql\n",
+	} {
+		if !bytes.Contains(md, []byte(s)) {
+			t.Errorf("report missing %q", s)
+		}
+	}
+	// pkg/metrics is imported but imports nothing: a utility, not suggested.
+	if bytes.Contains(md, []byte("describe `pkg/metrics`")) {
+		t.Error("utility component suggested")
+	}
+	// Catalog has no edge to the Store in code, so the as-built diagram has none.
+	if bytes.Contains(md, []byte("c_catalog --> c_store")) {
+		t.Error("as-built diagram invented an edge")
+	}
+}
