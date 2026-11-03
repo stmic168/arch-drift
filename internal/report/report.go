@@ -69,23 +69,25 @@ type Summary struct {
 
 // Report is the JSON document.
 type Report struct {
-	Tool     string             `json:"tool"`
-	Repo     string             `json:"repo"`
-	Doc      string             `json:"doc"`
-	Module   string             `json:"module"`
-	Summary  Summary            `json:"summary"`
-	Findings []drift.Finding    `json:"findings"`
-	Dropped  []docmodel.Dropped `json:"dropped_claims"`
-	Usage    UsageReport        `json:"usage"`
-	Code     *codemodel.Model   `json:"code_model"`
-	DocModel *docmodel.Model    `json:"doc_model"`
-	Graph    []drift.GraphEdge  `json:"graph"`
-	Missing  []string           `json:"missing_nodes"`
-	Undoc    []string           `json:"undocumented_nodes"`
-	Lock     string             `json:"lock,omitempty"`
-	Config   string             `json:"config,omitempty"`
-	Baseline string             `json:"baseline,omitempty"`
-	Notes    []string           `json:"notes"`
+	Tool             string             `json:"tool"`
+	Repo             string             `json:"repo"`
+	Doc              string             `json:"doc"`
+	Module           string             `json:"module"`
+	Summary          Summary            `json:"summary"`
+	Findings         []drift.Finding    `json:"findings"`
+	Dropped          []docmodel.Dropped `json:"dropped_claims"`
+	Usage            UsageReport        `json:"usage"`
+	Code             *codemodel.Model   `json:"code_model"`
+	DocModel         *docmodel.Model    `json:"doc_model"`
+	Graph            []drift.GraphEdge  `json:"graph"`
+	Missing          []string           `json:"missing_nodes"`
+	External         []string           `json:"external_nodes"`
+	FailUndocumented bool               `json:"undocumented_components_fail"`
+	Undoc            []string           `json:"undocumented_nodes"`
+	Lock             string             `json:"lock,omitempty"`
+	Config           string             `json:"config,omitempty"`
+	Baseline         string             `json:"baseline,omitempty"`
+	Notes            []string           `json:"notes"`
 }
 
 // Input bundles everything needed to build a report.
@@ -100,6 +102,7 @@ type Input struct {
 	Notes                     []string // warnings shown at the top of the report
 	Config                    string   // config file path, when one was used
 	Baseline                  string   // baseline file path, when one was used
+	FailUndocumented          bool     // UNDOCUMENTED_COMPONENT fails the check
 }
 
 // Build assembles the report.
@@ -153,7 +156,7 @@ func Build(in Input) *Report {
 		Tool: "archdrift", Repo: in.Repo, Doc: in.Doc, Module: in.Code.Module,
 		Summary: s, Findings: in.Result.Findings, Dropped: dropped, Usage: u,
 		Code: in.Code, DocModel: in.DocModel, Graph: in.Result.Graph,
-		Missing: in.Result.MissingNodes, Undoc: in.Result.UndocumentedNodes,
+		Missing: in.Result.MissingNodes, External: in.Result.ExternalNodes, FailUndocumented: in.FailUndocumented, Undoc: in.Result.UndocumentedNodes,
 		Lock: in.Lock, Notes: notes, Config: in.Config, Baseline: in.Baseline,
 	}
 }
@@ -216,12 +219,16 @@ func Markdown(r *Report) string {
 	}
 
 	b.WriteString("## Summary\n\n| Finding | Severity | Fails check | Count |\n|---|---|---|---|\n")
+	undocSev, undocFail := drift.Info, "no (config: undocumented_components.fail)"
+	if r.FailUndocumented {
+		undocSev, undocFail = drift.Low, "yes"
+	}
 	rows := []struct{ t, sev, fail string }{
 		{drift.ForbiddenEdge, drift.High, "yes"},
 		{drift.MissingComponent, drift.Medium, "yes"},
 		{drift.MissingEdge, drift.Medium, "yes"},
 		{drift.UndocumentedEdge, drift.Low, "yes"},
-		{drift.UndocumentedComponent, drift.Low, "yes"},
+		{drift.UndocumentedComponent, undocSev, undocFail},
 		{drift.Unverifiable, drift.Info, "no"},
 	}
 	for _, row := range rows {
@@ -297,7 +304,7 @@ func Markdown(r *Report) string {
 
 	b.WriteString("## Diagram\n\n")
 	b.WriteString(Mermaid(r))
-	b.WriteString("\nLegend: green = documented and present; red = forbidden but present; orange dashed = documented but missing; blue = present but undocumented; grey dotted = runtime relation, not checkable; grey = context. Yellow nodes are undocumented; red dashed nodes and edges are in the doc only.\n\n")
+	b.WriteString("\nLegend: green = documented and present; red = forbidden but present; orange dashed = documented but missing; blue = present but undocumented; grey dotted = runtime relation, not checkable; grey = context. Yellow nodes are undocumented; red dashed nodes and edges are in the doc only; grey rounded nodes are outside the codebase.\n\n")
 
 	b.WriteString("## Dropped claims\n\n")
 	if len(r.Dropped) == 0 {
@@ -377,6 +384,9 @@ func Mermaid(r *Report) string {
 	for _, n := range r.Missing {
 		fmt.Fprintf(&b, "  %s[\"%s<br/>(doc only)\"]:::missing\n", nodeID(drift.DocNode(n)), label(n))
 	}
+	for _, n := range r.External {
+		fmt.Fprintf(&b, "  %s([\"%s<br/>(external)\"]):::external\n", nodeID(drift.DocNode(n)), label(n))
+	}
 	styles := map[string][]int{}
 	for i, e := range r.Graph {
 		arrow := "-->"
@@ -404,6 +414,7 @@ func Mermaid(r *Report) string {
 	}
 	b.WriteString("  classDef undocumented fill:#fff3b0,stroke:#b8860b,color:#000\n")
 	b.WriteString("  classDef missing fill:#ffd6d6,stroke:#c00,stroke-dasharray:5 5,color:#000\n")
+	b.WriteString("  classDef external fill:#eeeeee,stroke:#888,color:#000\n")
 	colors := []struct{ status, style string }{
 		{drift.EdgeOK, "stroke:#2e8b57,stroke-width:2px"},
 		{drift.EdgeForbidden, "stroke:#d00000,stroke-width:3px"},

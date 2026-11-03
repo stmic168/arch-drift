@@ -430,7 +430,7 @@ func TestBaselineWorkflow(t *testing.T) {
 	if code := run(context.Background(), append([]string{"baseline"}, base...), &so, &se, nil); code != 0 {
 		t.Fatalf("baseline: exit %d: %s", code, se.String())
 	}
-	if !strings.Contains(so.String(), "5 accepted finding(s) (0 kept, 5 new)") {
+	if !strings.Contains(so.String(), "4 accepted finding(s) (0 kept, 4 new)") {
 		t.Errorf("baseline output: %s", so.String())
 	}
 	// Everything accepted: check passes, reports the TODO reasons, and lists accepted drift.
@@ -439,7 +439,7 @@ func TestBaselineWorkflow(t *testing.T) {
 		t.Fatalf("check with full baseline: exit %d: %s", code, so.String())
 	}
 	md, _ := os.ReadFile(filepath.Join(dir, "out", "report.md"))
-	for _, s := range []string{"## Accepted drift (baseline)", "Accepted by baseline (not counted above): 5", "has no real reason yet", "### 1. UNVERIFIABLE (info): Worker -> API Gateway"} {
+	for _, s := range []string{"## Accepted drift (baseline)", "Accepted by baseline (not counted above): 4", "has no real reason yet", "### 1. UNDOCUMENTED_COMPONENT (info): pkg/metrics"} {
 		if !bytes.Contains(md, []byte(s)) {
 			t.Errorf("report missing %q", s)
 		}

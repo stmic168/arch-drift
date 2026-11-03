@@ -64,7 +64,7 @@ func Verify(m *Model, doc string, ids []string) (*Model, []Dropped) {
 			dropped = append(dropped, Dropped{Claim: "component", Name: name, Quote: c.Quote, Reason: "duplicate component name"})
 			continue
 		}
-		kept := Component{Name: name, Quote: c.Quote, CodeIDs: []string{}}
+		kept := Component{Name: name, Quote: c.Quote, CodeIDs: []string{}, External: c.External}
 		seen := map[string]bool{}
 		for _, id := range c.CodeIDs {
 			if !known[id] {

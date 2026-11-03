@@ -4,6 +4,7 @@ package drift
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -44,6 +45,7 @@ type Finding struct {
 	Code     []codemodel.Location `json:"code_evidence"`       // file:line from code
 	DocQuote string               `json:"doc_quote,omitempty"` // verbatim from doc
 	Protocol string               `json:"protocol,omitempty"`
+	Weight   int                  `json:"weight,omitempty"`   // ranking for undocumented components: importers*100 + packages
 	Via      []string             `json:"via,omitempty"`      // component path when proven transitively
 	Accepted *Accepted            `json:"accepted,omitempty"` // set when the baseline accepts this finding
 }
@@ -54,6 +56,22 @@ type Options struct {
 	TransitiveRequired bool
 	// TransitiveForbidden makes an import path through other components violate a forbidden relation.
 	TransitiveForbidden bool
+	// FailUndocumentedComponents makes UNDOCUMENTED_COMPONENT fail the check.
+	// Off by default: architecture docs describe a few major components, so
+	// every utility package would otherwise be drift.
+	FailUndocumentedComponents bool
+	// IgnoreUndocumented lists component ID patterns (path.Match syntax, e.g.
+	// "pkg/ext*") never reported as UNDOCUMENTED_COMPONENT.
+	IgnoreUndocumented []string
+}
+
+func (o Options) ignoredUndocumented(id string) bool {
+	for _, p := range o.IgnoreUndocumented {
+		if ok, _ := path.Match(p, id); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Status of a documented relation, for diagrams.
@@ -85,6 +103,8 @@ type Result struct {
 	Graph    []GraphEdge `json:"graph"`
 	// MissingNodes are doc components with no code ID (shown in the diagram).
 	MissingNodes []string `json:"missing_nodes"`
+	// ExternalNodes are doc components outside the codebase with no code ID.
+	ExternalNodes []string `json:"external_nodes"`
 	// UndocumentedNodes are code IDs not mapped by any doc component.
 	UndocumentedNodes []string `json:"undocumented_nodes"`
 }
@@ -149,10 +169,10 @@ func Checkable(fromIDs, toIDs []string, protocol string, isDeployable func(strin
 	return true, ""
 }
 
-// path finds the shortest import path from any of from to any of to, at
+// importPath finds the shortest import path from any of from to any of to, at
 // least two hops long (direct edges are handled separately). Deterministic:
 // edges are visited in sorted order.
-func path(code *codemodel.Model, from, to []string) []codemodel.Edge {
+func importPath(code *codemodel.Model, from, to []string) []codemodel.Edge {
 	adj := map[string][]codemodel.Edge{}
 	for _, e := range code.Edges {
 		adj[e.From] = append(adj[e.From], e)
@@ -209,7 +229,7 @@ func chainEvidence(chain []codemodel.Edge) ([]codemodel.Location, []string) {
 
 // Diff computes findings. Inputs must already be verified.
 func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
-	res := &Result{Findings: []Finding{}, Graph: []GraphEdge{}, MissingNodes: []string{}, UndocumentedNodes: []string{}}
+	res := &Result{Findings: []Finding{}, Graph: []GraphEdge{}, MissingNodes: []string{}, ExternalNodes: []string{}, UndocumentedNodes: []string{}}
 	byName := map[string]docmodel.Component{}
 	owners := map[string][]string{} // code ID -> doc component names
 	for _, c := range doc.Components {
@@ -222,6 +242,10 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 
 	// Components.
 	for _, c := range doc.Components {
+		if len(c.CodeIDs) == 0 && c.External {
+			res.ExternalNodes = append(res.ExternalNodes, c.Name) // outside the codebase by design
+			continue
+		}
 		if len(c.CodeIDs) == 0 {
 			res.MissingNodes = append(res.MissingNodes, c.Name)
 			res.Findings = append(res.Findings, Finding{
@@ -231,15 +255,29 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 			})
 		}
 	}
-	for _, cc := range code.Components {
-		if len(owners[cc.ID]) == 0 {
-			res.UndocumentedNodes = append(res.UndocumentedNodes, cc.ID)
-			res.Findings = append(res.Findings, Finding{
-				ID: UndocumentedComponent + ":" + cc.ID, Type: UndocumentedComponent, Severity: Low, Failing: true,
-				Subject: cc.ID, From: cc.ID, Message: fmt.Sprintf("Code component %s is not described in the doc.", cc.ID),
-				Code: []codemodel.Location{cc.Anchor},
-			})
+	importers := map[string]map[string]bool{}
+	for _, e := range code.Edges {
+		if importers[e.To] == nil {
+			importers[e.To] = map[string]bool{}
 		}
+		importers[e.To][e.From] = true
+	}
+	for _, cc := range code.Components {
+		if len(owners[cc.ID]) > 0 || opts.ignoredUndocumented(cc.ID) {
+			continue
+		}
+		res.UndocumentedNodes = append(res.UndocumentedNodes, cc.ID)
+		sev := Info
+		if opts.FailUndocumentedComponents {
+			sev = Low
+		}
+		n := len(importers[cc.ID])
+		res.Findings = append(res.Findings, Finding{
+			ID: UndocumentedComponent + ":" + cc.ID, Type: UndocumentedComponent, Severity: sev, Failing: opts.FailUndocumentedComponents,
+			Subject: cc.ID, From: cc.ID, Weight: n*100 + len(cc.Packages),
+			Message: fmt.Sprintf("Code component %s (%d package(s), imported by %d component(s)) is not described in the doc.", cc.ID, len(cc.Packages), n),
+			Code:    []codemodel.Location{cc.Anchor},
+		})
 	}
 
 	// Relations.
@@ -255,8 +293,9 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 	}
 	for _, r := range doc.Relations {
 		fc, tc := byName[r.From], byName[r.To]
+		subject := r.From + " -> " + r.To
 		if len(fc.CodeIDs) == 0 || len(tc.CodeIDs) == 0 {
-			// The missing component is already reported; only draw the relation.
+			// Not checkable: say why instead of skipping it silently.
 			from, to := DocNode(r.From), DocNode(r.To)
 			if len(fc.CodeIDs) > 0 {
 				from = fc.CodeIDs[0]
@@ -265,9 +304,23 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				to = tc.CodeIDs[0]
 			}
 			addGraph(from, to, EdgeDocOnly, r.Protocol)
+			var why []string
+			for _, c := range []docmodel.Component{fc, tc} {
+				switch {
+				case len(c.CodeIDs) > 0:
+				case c.External:
+					why = append(why, c.Name+" is outside this codebase")
+				default:
+					why = append(why, c.Name+" has no code in this repo")
+				}
+			}
+			res.Findings = append(res.Findings, Finding{
+				ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
+				Subject: subject, From: strings.Join(fc.CodeIDs, ","), To: strings.Join(tc.CodeIDs, ","), Protocol: r.Protocol,
+				Message: "Not checked: " + strings.Join(why, "; ") + ".", Code: []codemodel.Location{}, DocQuote: r.Quote,
+			})
 			continue
 		}
-		subject := r.From + " -> " + r.To
 		var hits []codemodel.Edge
 		for _, f := range fc.CodeIDs {
 			for _, t := range tc.CodeIDs {
@@ -284,7 +337,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 		switch r.Kind {
 		case docmodel.KindForbidden:
 			if len(hits) == 0 && opts.TransitiveForbidden {
-				if chain := path(code, fc.CodeIDs, tc.CodeIDs); chain != nil {
+				if chain := importPath(code, fc.CodeIDs, tc.CodeIDs); chain != nil {
 					ev, via := chainEvidence(chain)
 					addGraph(chain[0].From, chain[len(chain)-1].To, EdgeForbidden, "forbidden, via "+strings.Join(via[1:len(via)-1], ", "))
 					res.Findings = append(res.Findings, Finding{
@@ -326,11 +379,23 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 				continue
 			}
 			if opts.TransitiveRequired {
-				if chain := path(code, fc.CodeIDs, tc.CodeIDs); chain != nil {
+				if chain := importPath(code, fc.CodeIDs, tc.CodeIDs); chain != nil {
 					_, via := chainEvidence(chain)
 					addGraph(chain[0].From, chain[len(chain)-1].To, EdgeOK, "via "+strings.Join(via[1:len(via)-1], ", "))
 					continue
 				}
+			}
+			if IsNetworkProtocol(r.Protocol) {
+				// Components in one binary often call each other over HTTP/gRPC
+				// through generic clients, so a missing import proves nothing.
+				addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeUnverifiable, r.Protocol)
+				res.Findings = append(res.Findings, Finding{
+					ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
+					Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
+					Message: fmt.Sprintf("Not checked: no import from %s to %s, but the doc says they talk over %q, which can happen at runtime without one.", join(fc.CodeIDs), join(tc.CodeIDs), r.Protocol),
+					Code:    []codemodel.Location{}, DocQuote: r.Quote,
+				})
+				continue
 			}
 			addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeMissing, "missing")
 			res.Findings = append(res.Findings, Finding{
@@ -369,6 +434,12 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 		if severityRank[a.Severity] != severityRank[b.Severity] {
 			return severityRank[a.Severity] < severityRank[b.Severity]
 		}
+		if a.Type != b.Type {
+			return a.Type < b.Type
+		}
+		if a.Weight != b.Weight {
+			return a.Weight > b.Weight // most-imported undocumented components first
+		}
 		return a.ID < b.ID
 	})
 	sort.SliceStable(res.Graph, func(i, j int) bool {
@@ -378,6 +449,7 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 		return res.Graph[i].To < res.Graph[j].To
 	})
 	sort.Strings(res.MissingNodes)
+	sort.Strings(res.ExternalNodes)
 	sort.Strings(res.UndocumentedNodes)
 	return res
 }

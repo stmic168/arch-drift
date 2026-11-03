@@ -22,6 +22,10 @@ type Component struct {
 	Name    string   `json:"name"`
 	CodeIDs []string `json:"code_ids"`
 	Quote   string   `json:"quote"`
+	// External marks something the doc places outside this codebase (users,
+	// client apps, third-party or managed systems). With no code IDs it is
+	// not reported as MISSING_COMPONENT.
+	External bool `json:"external,omitempty"`
 }
 
 // Relation is a doc-declared dependency between two doc components (by name).

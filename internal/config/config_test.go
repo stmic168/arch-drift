@@ -25,7 +25,8 @@ func TestLoadValid(t *testing.T) {
   "external": [{"id": "ext:s3", "prefixes": ["github.com/aws/aws-sdk-go-v2/service/s3"]}],
   "exclude": ["gen"],
   "default_layout": false,
-  "transitive": {"required": true}
+  "transitive": {"required": true},
+  "undocumented_components": {"fail": true, "ignore": ["pkg/ext*"]}
 }`))
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +40,7 @@ func TestLoadValid(t *testing.T) {
 	if got := c.ScanOptions(); !reflect.DeepEqual(got, want) {
 		t.Errorf("ScanOptions = %+v", got)
 	}
-	if d := c.DiffOptions(); !d.TransitiveRequired || d.TransitiveForbidden {
+	if d := c.DiffOptions(); !d.TransitiveRequired || d.TransitiveForbidden || !d.FailUndocumentedComponents || len(d.IgnoreUndocumented) != 1 {
 		t.Errorf("DiffOptions = %+v", d)
 	}
 	// Omitted default_layout keeps the default layout.
