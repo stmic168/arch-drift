@@ -99,7 +99,7 @@ runs:
 
     - name: Upload SARIF
       if: always() && inputs.upload-sarif == 'true' && (steps.check.outputs.exit-code == '0' || steps.check.outputs.exit-code == '1')
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: ${{ inputs.out }}/report.sarif
         category: archdrift

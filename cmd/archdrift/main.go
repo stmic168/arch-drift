@@ -407,7 +407,13 @@ func baseResult(o options, raw *docmodel.Model, docs []docmodel.Doc) (*drift.Res
 		return nil, "", err
 	}
 	defer git(top, "worktree", "remove", "--force", wt) //nolint:errcheck // best effort cleanup
-	code, err := codemodel.Scan(filepath.Join(wt, rel), o.scan)
+	baseRepo := filepath.Join(wt, rel)
+	if _, err := os.Stat(filepath.Join(baseRepo, "go.mod")); errors.Is(err, fs.ErrNotExist) {
+		// The repo (e.g. a new service) does not exist on the base revision:
+		// everything in it is new.
+		return &drift.Result{}, sha + ", where " + filepath.ToSlash(rel) + " does not exist yet", nil
+	}
+	code, err := codemodel.Scan(baseRepo, o.scan)
 	if err != nil {
 		return nil, "", fmt.Errorf("scan base: %w", err)
 	}

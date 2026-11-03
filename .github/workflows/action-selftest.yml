@@ -43,3 +43,20 @@ jobs:
         with:
           repo-path: testdata/shop
           docs: testdata/shop/design.md
+
+  # Runs only on pull requests from demo/... branches: such a PR adds drift to
+  # testdata/actiondemo to show the action failing and annotating the change.
+  demo-gate:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'demo/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./
+        with:
+          repo-path: testdata/actiondemo
+          docs: testdata/actiondemo/design.md
+          out: archdrift-demo
+          upload-sarif: "true"
