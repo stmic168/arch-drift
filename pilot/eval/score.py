@@ -31,10 +31,13 @@ for case in cases:
     n = sum(counts.values())
     for k, v in counts.items():
         total[k] = total.get(k, 0) + v
+    edges_only = [known.get(f["id"], "UNGRADED") for f in report["findings"] if f["failing"] and f["type"] != "UNDOCUMENTED_EDGE"]
+    report_mode = (sum(c == "TP" for c in edges_only), sum(c.startswith("FP") for c in edges_only), sum(c == "NOISE" for c in edges_only))
     pct = lambda x: f"{100 * x // n:>5}" if n else "    -"
     print(f"{case:<15}{n:>8}{counts['TP']:>5}{counts['FP']:>5}{counts['NOISE']:>7}{counts['UNGRADED']:>6} {pct(counts['FP'])} {pct(counts['NOISE'])}")
     for u in ungraded:
         print(f"    UNGRADED {u}")
+    print(f"    with undocumented_edges.fail=false: failing {len(edges_only)} (TP {report_mode[0]}, FP {report_mode[1]}, NOISE {report_mode[2]})")
     ranked = [f["subject"] for f in report["findings"] if f["type"] == "UNDOCUMENTED_COMPONENT"]
     print(f"    undocumented (top 5 of {len(ranked)}): {', '.join(ranked[:5])}")
     for imp in labels.get("_important_undocumented", {}).get(case, []):

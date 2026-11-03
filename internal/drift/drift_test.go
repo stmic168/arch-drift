@@ -80,6 +80,12 @@ func TestDiffFindingTypes(t *testing.T) {
 			wantType: UndocumentedEdge, wantSev: Low, wantFail: true, wantCode: "internal/a/x.go:4",
 		},
 		{
+			name:  "undocumented edge is informational when configured",
+			comps: base, edges: []codemodel.Edge{edge("internal/a", "internal/b", 4)}, docComps: baseDoc,
+			opts:     Options{ReportUndocumentedEdges: true},
+			wantType: UndocumentedEdge, wantSev: Info, wantFail: false, wantCode: "internal/a/x.go:4",
+		},
+		{
 			name:  "undocumented component is listed but does not fail by default",
 			comps: append(append([]codemodel.Component{}, base...), comp("pkg/metrics")), docComps: baseDoc,
 			wantType: UndocumentedComponent, wantSev: Info, wantFail: false, wantCode: "pkg/metrics/x.go:1",

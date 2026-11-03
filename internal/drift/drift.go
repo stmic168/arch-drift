@@ -61,6 +61,10 @@ type Options struct {
 	// Off by default: architecture docs describe a few major components, so
 	// every utility package would otherwise be drift.
 	FailUndocumentedComponents bool
+	// ReportUndocumentedEdges makes UNDOCUMENTED_EDGE informational (non-failing).
+	// For overview docs that state few relations, where every unlisted import
+	// between documented components would otherwise fail the check.
+	ReportUndocumentedEdges bool
 	// IgnoreUndocumented lists component ID patterns (path.Match syntax, e.g.
 	// "pkg/ext*") never reported as UNDOCUMENTED_COMPONENT.
 	IgnoreUndocumented []string
@@ -440,8 +444,12 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 		}
 		addGraph(e.From, e.To, EdgeUndocumented, "")
 		subject := strings.Join(owners[e.From], "/") + " -> " + strings.Join(owners[e.To], "/")
+		sev, failing := Low, true
+		if opts.ReportUndocumentedEdges {
+			sev, failing = Info, false
+		}
 		res.Findings = append(res.Findings, Finding{
-			ID: UndocumentedEdge + ":" + e.From + "->" + e.To, Type: UndocumentedEdge, Severity: Low, Failing: true,
+			ID: UndocumentedEdge + ":" + e.From + "->" + e.To, Type: UndocumentedEdge, Severity: sev, Failing: failing,
 			Subject: subject, From: e.From, To: e.To,
 			Message: fmt.Sprintf("Code has %s importing %s, which the doc does not mention.", e.From, e.To),
 			Code:    e.Evidence,

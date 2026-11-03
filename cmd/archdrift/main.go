@@ -312,7 +312,7 @@ func runCheck(ctx context.Context, o options, apiExtractor func() docmodel.Extra
 	rep := report.Build(report.Input{
 		Repo: filepath.ToSlash(filepath.Clean(o.repo)), Doc: docLabel(in),
 		RequestedModel: o.model, Code: in.code, DocModel: verified, Dropped: dropped, Result: res, Usage: usage,
-		Lock: lockPath, Notes: notes, Config: o.configPath, Baseline: shownBaseline, FailUndocumented: o.diff.FailUndocumentedComponents,
+		Lock: lockPath, Notes: notes, Config: o.configPath, Baseline: shownBaseline, FailUndocumented: o.diff.FailUndocumentedComponents, ReportUndocumentedEdges: o.diff.ReportUndocumentedEdges,
 	})
 	if err := report.Write(o.out, rep); err != nil {
 		return fail(fmt.Errorf("write report: %w", err))
