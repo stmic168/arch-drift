@@ -684,3 +684,27 @@ func TestSARIF(t *testing.T) {
 	check("FORBIDDEN_EDGE:API Gateway -> Store", "shop/cmd/api/main.go", 10, "error")
 	check("MISSING_COMPONENT:Notifier", "shop/design.md", 17, "error")
 }
+
+func TestBaseWithoutTheRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "README.md"), []byte("monorepo\n"), 0o644)
+	gitRun(t, root, "init", "-q")
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base without the service")
+	repo := filepath.Join(root, "services", "shop") // added by the change
+	copyTree(t, fixtureRepo, repo)
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "add service")
+	out := filepath.Join(root, "out")
+	var so, se bytes.Buffer
+	code := run(context.Background(), []string{"check", "--repo", repo, "--doc", filepath.Join(repo, "design.md"), "--base", "HEAD~1", "--out", out}, &so, &se, failingExtractor(t))
+	if code != 1 {
+		t.Fatalf("exit %d: %s %s", code, so.String(), se.String())
+	}
+	if !strings.Contains(so.String(), "where services/shop does not exist yet") || !strings.Contains(so.String(), "4 failing finding(s) introduced") {
+		t.Errorf("stdout: %s", so.String())
+	}
+}
