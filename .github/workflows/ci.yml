@@ -38,3 +38,5 @@ jobs:
           echo "exit code: $code"
           test "$code" -eq 1
           jq -e '.usage.source == "lock"' out-lock/report.json
+      - name: Local check script (keeps scripts/check.sh working)
+        run: scripts/check.sh

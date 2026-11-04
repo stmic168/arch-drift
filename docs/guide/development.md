@@ -29,6 +29,8 @@ The fixture plants one finding of each type (see the `planted` comments in its c
 
 ## Tests
 
+`scripts/check.sh` runs everything a pull request needs locally: gofmt, `go vet`, `go test`, the two fixture runs (exit 1 expected) and the dogfood check against ADR-001 (exit 0 expected). Run it before every push.
+
 ```bash
 go vet ./... && go test ./...
 ```
@@ -39,6 +41,27 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 
 - `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: `go vet`, `go test`, an offline fixture run with `--doc-model`, and a run that reads the committed `testdata/shop/design.lock.json`; both must exit 1.
 - `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture (with `--no-lock`), so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), prints the doc model and dropped claims to the log, fails if the failing findings differ from `expected.json` (a different `UNVERIFIABLE` set is only a notice, since it depends on how the model reads runtime relations), puts `report.md` in the job summary, and uploads the reports as an artifact. You can pick a branch under **Use workflow from**. GitHub only shows **Run workflow** once the workflow file is on the default branch.
+
+## Working with Claude
+
+Claude sessions follow [`CLAUDE.md`](../../CLAUDE.md) (conventions, limits of the cloud session) and take work from [`docs/ROADMAP.md`](../ROADMAP.md). Project skills in `.claude/skills/`:
+
+- `/ship`: `scripts/check.sh`, commit, push, open the pull request with the Problem / Change / Verification template, remove the footer the server adds, subscribe to CI.
+- `/next`: check CI on `main`, take the next roadmap item, build it, update the roadmap.
+- `/pilot`: run the `pilot` workflow on a public repository (one API call), save the lock, replay it offline and grade the findings.
+
+## Repository settings
+
+Set once by the owner in the GitHub UI, so pull requests merge themselves once approved and green:
+
+1. **Settings, General, Pull Requests**: tick **Allow auto-merge** and **Automatically delete head branches**.
+2. **Settings, Rules, Rulesets, New ruleset, New branch ruleset**: name `main`, enforcement **Active**, target **Include default branch**. Tick:
+   - **Restrict deletions** and **Block force pushes**;
+   - **Require a pull request before merging** (required approvals 0 for a single maintainer; reviews still possible);
+   - **Require status checks to pass**, adding `test` (ci), `full-check` and `diff-check` (action-selftest), and `archdrift` (architecture). A check appears in the list after it has run once.
+3. On a pull request, **Enable auto-merge** (squash or merge commit): it merges when the required checks pass.
+
+`.github/dependabot.yml` opens weekly pull requests for GitHub Actions versions and the Go module; they go through the same checks.
 
 ## Releases
 

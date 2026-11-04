@@ -1,0 +1,14 @@
+# Weekly update PRs for GitHub Actions and the Go module (anthropic-sdk-go).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
