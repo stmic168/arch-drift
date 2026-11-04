@@ -80,7 +80,7 @@ func TestInitProposesLayout(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, s := range []string{"repo-path: server\n", "docs: server/docs/architecture.md\n", "uses: stmic168/arch-drift@main", "security-events: write"} {
+		for _, s := range []string{"repo-path: server\n", "docs: server/docs/architecture.md\n", "uses: stmic168/arch-drift@main", "security-events: write", "pull-requests: write", "comment: \"true\""} {
 			if !strings.Contains(string(wf), s) {
 				t.Errorf("workflow missing %q:\n%s", s, wf)
 			}

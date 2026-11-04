@@ -52,6 +52,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      pull-requests: write # comment: one comment, updated on every push
     steps:
       - uses: actions/checkout@v7
       - uses: ./
@@ -60,3 +61,4 @@ jobs:
           docs: testdata/actiondemo/design.md
           out: archdrift-demo
           upload-sarif: "true"
+          comment: "true"

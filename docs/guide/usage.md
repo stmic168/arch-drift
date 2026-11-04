@@ -45,7 +45,7 @@ go build -o archdrift ./cmd/archdrift
 |---|---|---|
 | `--repo` | required | Go repo root (must contain `go.mod`) |
 | `--doc` | required | Markdown design doc (Mermaid blocks are fine). Repeat it to read several files as one doc; findings then name the file each quote came from. |
-| `--out` | `archdrift-out` | output dir: `report.md`, `report.json`, `cache/` |
+| `--out` | `archdrift-out` | output dir: `report.md`, `report.json`, `report.sarif`, `comment.md` (the short pull request comment), `cache/` |
 | `--model` | `claude-sonnet-5-5` | Claude model used for doc extraction |
 | `--doc-model` | | load a recorded doc model JSON and skip the API (ignores any lock) |
 | `--lock` | next to the doc (`design.md` -> `design.lock.json`) | lock file to read (`check`) or write (`lock`) |

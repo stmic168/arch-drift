@@ -176,7 +176,7 @@ func Build(in Input) *Report {
 	}
 }
 
-// Write writes report.json and report.md into dir.
+// Write writes report.json, report.md and comment.md (the pull request comment) into dir.
 func Write(dir string, r *Report) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -188,7 +188,10 @@ func Write(dir string, r *Report) error {
 	if err := os.WriteFile(filepath.Join(dir, "report.json"), append(b, '\n'), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "report.md"), []byte(Markdown(r)), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "report.md"), []byte(Markdown(r)), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "comment.md"), []byte(Comment(r)), 0o644)
 }
 
 func mdEscape(s string) string {
