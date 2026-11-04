@@ -1,0 +1,37 @@
+{
+  "components": [
+    {
+      "id": "clients/cmd",
+      "paths": [
+        "clients/cmd"
+      ]
+    },
+    {
+      "id": "clients/pkg",
+      "paths": [
+        "clients/pkg"
+      ]
+    }
+  ],
+  "exclude": [
+    "integration",
+    "tools"
+  ],
+  "undocumented_edges": {
+    "fail": false
+  },
+  "services": [
+    "pkg/bloombuild",
+    "pkg/bloomgateway",
+    "pkg/compactor",
+    "pkg/dataobj",
+    "pkg/distributor",
+    "pkg/indexgateway",
+    "pkg/ingester",
+    "pkg/lokifrontend",
+    "pkg/pattern",
+    "pkg/querier",
+    "pkg/ruler",
+    "pkg/scheduler"
+  ]
+}
