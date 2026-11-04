@@ -74,12 +74,14 @@ func mermaidID(name string) string {
 // actually has between them, under the doc's names, ready to paste into the doc.
 func AsBuilt(r *Report) string {
 	owners := map[string][]string{}
+	ids := map[string][]string{}
 	var names []string
 	for _, c := range r.DocModel.Components {
 		if len(c.CodeIDs) == 0 {
 			continue
 		}
 		names = append(names, c.Name)
+		ids[c.Name] = c.CodeIDs
 		for _, id := range c.CodeIDs {
 			owners[id] = append(owners[id], c.Name)
 		}
@@ -106,9 +108,11 @@ func AsBuilt(r *Report) string {
 		add(proto, e.From, e.To)
 	}
 	var b strings.Builder
-	b.WriteString("```mermaid\nflowchart LR\n")
+	// The marker and the code IDs in the labels let archdrift read the
+	// diagram back by code once it is pasted into the doc (--no-llm).
+	b.WriteString("```mermaid\nflowchart LR\n  " + docmodel.DiagramMarker + "\n")
 	for _, n := range names {
-		fmt.Fprintf(&b, "  %s[\"%s\"]\n", mermaidID(n), label(n))
+		fmt.Fprintf(&b, "  %s[\"%s<br/>%s\"]\n", mermaidID(n), label(n), strings.Join(ids[n], ", "))
 	}
 	lines := []string{}
 	for p := range deps {

@@ -31,11 +31,11 @@ const (
 )
 
 const usage = `usage:
-  archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock] [--config <json>] [--base <git ref>]
+  archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock] [--no-llm] [--config <json>] [--base <git ref>]
   archdrift baseline --repo <path> --doc <design.md> [same flags as check]
   archdrift init --repo <path> --doc <design.md> [--mode report|gate] [--force]
   archdrift scan --repo <path> [--config <json>] [--json]
-  archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--config <json>]
+  archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json> | --no-llm] [--lock <path>] [--config <json>]
   archdrift version
 
 check  compares code with the doc and writes <out>/report.md, report.json and
@@ -58,6 +58,8 @@ baseline  accepts every current failing finding into archdrift.baseline.json
   --doc-model  use a recorded doc model JSON instead of the API (ignores any lock)
   --lock       lock file path (default: next to the first doc, design.md -> design.lock.json)
   --no-lock    check only: ignore the lock and extract from the doc
+  --no-llm     build the doc model only from Mermaid blocks marked with the line
+               "%% archdrift: dependencies" (arrows mean depends on); no API call
   --sarif-root check only: directory SARIF paths are relative to (default --repo);
                set it to the checkout root when --repo is a subdirectory
   --base       check only: git revision to compare with (e.g. origin/main); only
@@ -72,7 +74,7 @@ Exit codes: check 0 no drift, 1 drift, 2 error; lock and baseline 0 written, 2 e
 type options struct {
 	repo, out, model, docModel, lock, config, baseline, today, base, sarifRoot string
 	docs                                                                       docList
-	noLock, fresh                                                              bool
+	noLock, fresh, noLLM                                                       bool
 
 	// resolved from the config file
 	configPath string
@@ -113,6 +115,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 	fs.StringVar(&o.docModel, "doc-model", "", "")
 	fs.StringVar(&o.lock, "lock", "", "")
 	fs.StringVar(&o.config, "config", "", "")
+	fs.BoolVar(&o.noLLM, "no-llm", false, "")
 	if cmd != "lock" {
 		fs.BoolVar(&o.noLock, "no-lock", false, "")
 		fs.StringVar(&o.baseline, "baseline", "", "")
@@ -128,7 +131,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtrac
 	if err := fs.Parse(args[1:]); err != nil {
 		return exitError
 	}
-	if o.repo == "" || len(o.docs) == 0 || fs.NArg() > 0 || (o.noLock && o.lock != "") {
+	if o.repo == "" || len(o.docs) == 0 || fs.NArg() > 0 || (o.noLock && o.lock != "") || (o.noLLM && o.docModel != "") {
 		fs.Usage()
 		return exitError
 	}
@@ -235,10 +238,17 @@ func extract(ctx context.Context, ext docmodel.Extractor, in *inputs, model stri
 	if err != nil {
 		return nil, usage, fmt.Errorf("extract doc model: %w", err)
 	}
+	// Marked dependency diagrams are read by code and added to what the LLM
+	// extracted. A lock already holds them, as reviewed.
+	if usage.Source != "lock" && usage.Source != "diagram" {
+		if d, ok := docmodel.ParseDiagrams(in.doc, in.code.IDs()); ok {
+			raw = docmodel.MergeDiagrams(raw, d)
+		}
+	}
 	if len(raw.Components) == 0 {
 		return nil, usage, fmt.Errorf("doc model has no components (source %s); extraction failed or the doc describes no architecture", usage.Source)
 	}
-	if usage.Model == "" && usage.Source != "recorded" {
+	if usage.Model == "" && usage.Source != "recorded" && usage.Source != "diagram" {
 		usage.Model = model
 	}
 	return raw, usage, nil
@@ -270,6 +280,8 @@ func analyze(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 	switch {
 	case o.docModel != "":
 		ext = docmodel.FileExtractor{Path: o.docModel}
+	case o.noLLM:
+		ext = docmodel.DiagramExtractor{}
 	case !o.noLock:
 		p := o.lock
 		if p == "" {
@@ -617,9 +629,14 @@ func runLock(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 		return exitOK
 	}
 
-	ext := apiExtractor()
-	if o.docModel != "" {
+	var ext docmodel.Extractor
+	switch {
+	case o.docModel != "":
 		ext = docmodel.FileExtractor{Path: o.docModel}
+	case o.noLLM:
+		ext = docmodel.DiagramExtractor{}
+	default:
+		ext = apiExtractor()
 	}
 	raw, usage, err := extract(ctx, ext, in, o.model)
 	if err != nil {
@@ -634,8 +651,8 @@ func runLock(ctx context.Context, o options, apiExtractor func() docmodel.Extrac
 		return fail(errors.New("no component survived verification; nothing to lock"))
 	}
 	model := usage.Model
-	if usage.Source == "recorded" {
-		model = "recorded"
+	if usage.Source == "recorded" || usage.Source == "diagram" {
+		model = usage.Source
 	}
 	if err := docmodel.WriteLock(p, docmodel.NewLock(in.doc, ids, model, verified)); err != nil {
 		return fail(fmt.Errorf("write lock: %w", err))

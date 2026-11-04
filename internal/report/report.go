@@ -139,7 +139,7 @@ func Build(in Input) *Report {
 		s.ExitCode = 1
 	}
 	u := UsageReport{Usage: in.Usage, Requested: in.RequestedModel}
-	if in.Usage.Source == "recorded" || in.Usage.Source == "lock" {
+	if in.Usage.Source == "recorded" || in.Usage.Source == "lock" || in.Usage.Source == "diagram" {
 		u.Requested = "" // --doc-model: no model was called
 	}
 	if c, ok := Cost(in.Usage); ok {
@@ -151,6 +151,8 @@ func Build(in Input) *Report {
 			u.CostNote = "doc model served from local cache; no API call"
 		case "lock":
 			u.CostNote = "doc model read from the reviewed lock file; no API call"
+		case "diagram":
+			u.CostNote = "doc model read by code from marked dependency diagrams; no API call"
 		default:
 			u.CostNote = "doc model loaded from a recorded file; no API call"
 		}
@@ -365,7 +367,7 @@ func Markdown(r *Report) string {
 		b.WriteString("\n")
 	}
 	if ab := AsBuilt(r); ab != "" {
-		b.WriteString("### As-built diagram\n\nThe documented components with the dependencies the code has between them today, under the doc's names. Paste it into the doc to describe the code as it is.\n\n")
+		b.WriteString("### As-built diagram\n\nThe documented components with the dependencies the code has between them today, under the doc's names. Paste it into the doc to describe the code as it is. Its `%% archdrift: dependencies` line makes archdrift read every arrow as \"depends on\" by code, with no LLM (`--no-llm`); remove arrows the doc should forbid, or label them `must not`.\n\n")
 		b.WriteString(ab)
 		b.WriteString("\n")
 	}

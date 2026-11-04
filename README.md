@@ -4,6 +4,18 @@
 
 **Core principle:** the LLM only reads the doc and maps the doc's names onto code IDs. Code facts (components, imports) and every drift conclusion come from deterministic Go code. Only the doc text and the list of component IDs go to the API, never source code.
 
+```mermaid
+flowchart LR
+  doc["Design doc (Markdown)"] --> llm["LLM: map the doc's names to code IDs"]
+  llm --> verify["Verifier: every quote verbatim, every ID real"]
+  repo["Go repository"] --> parse["go/parser: components and imports"]
+  verify --> diff["Drift engine"]
+  parse --> diff
+  diff --> report["report.md / report.json / report.sarif"]
+```
+
+The LLM receives the doc and the list of component IDs (`cmd/api`, `internal/orders`, `ext:postgres`, ...) and nothing else. Its answer is checked by code before use, and with a reviewed lock file it is not called at all.
+
 ## Quick start
 
 Requires Go 1.25+. Only `lock` calls the Anthropic API (`ANTHROPIC_API_KEY`); `check` reads the committed lock and is free and deterministic.
@@ -35,6 +47,24 @@ go build -o archdrift ./cmd/archdrift
 
 The full rules are in [How it works](docs/guide/how-it-works.md#pipeline).
 
+## Architecture
+
+archdrift's own packages, as a dependency diagram: each solid arrow means "depends on", and a dotted `must not` arrow is a rule. The `%% archdrift: dependencies` line lets archdrift read this diagram by code, with no LLM. CI runs `archdrift check --repo . --doc README.md --no-llm --config archdrift.readme.json` on every pull request, so a new import between packages, a new package, or a package other than the Doc model importing the Anthropic SDK fails the build until this diagram (and, for rules, [ADR-001](docs/architecture-rules.md)) is updated.
+
+```mermaid
+flowchart LR
+  %% archdrift: dependencies
+  cli["CLI<br/>cmd/archdrift"] --> config["Config<br/>internal/config"] & code["Code model<br/>internal/codemodel"] & doc["Doc model<br/>internal/docmodel"] & drift["Drift engine<br/>internal/drift"] & report["Report<br/>internal/report"]
+  config --> code & drift
+  drift --> code & doc
+  report --> code & doc & drift
+  doc --> api[("Anthropic API<br/>ext:anthropic")]
+  code -. must not .-> api
+  drift -. must not .-> api
+  report -. must not .-> api
+  config -. must not .-> api
+```
+
 ## Documentation
 
 | Guide | Contents |
@@ -47,7 +77,7 @@ The full rules are in [How it works](docs/guide/how-it-works.md#pipeline).
 | [Changelog](CHANGELOG.md) | what each release contains |
 | [Roadmap](docs/ROADMAP.md) | what is done and what comes next |
 
-This repository checks itself against [ADR-001](docs/architecture-rules.md) on every pull request.
+This repository checks itself against [ADR-001](docs/architecture-rules.md) and the architecture diagram above on every pull request.
 
 ## License
 

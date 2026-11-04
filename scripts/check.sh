@@ -39,5 +39,8 @@ expect 1 "fixture lock" check --repo testdata/shop --doc testdata/shop/design.md
 step "dogfood: this repository against ADR-001 (no drift expected)"
 expect 0 "dogfood" check --repo . --doc docs/architecture-rules.md --out "$tmp/dogfood"
 
+step "README architecture diagram, read by code (no drift expected)"
+expect 0 "README diagram" check --repo . --doc README.md --no-llm --config archdrift.readme.json --out "$tmp/readme"
+
 if [ "$fail" -ne 0 ]; then echo "checks FAILED"; exit 1; fi
 echo "all checks passed"

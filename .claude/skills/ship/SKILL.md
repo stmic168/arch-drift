@@ -9,7 +9,7 @@ Follow `CLAUDE.md`. Steps:
 
 1. **Branch.** If on `main` or on a branch whose PR is merged, create `feat/<thing>`, `fix/<thing>` or `docs/<thing>` from the latest `origin/main` (`git fetch origin main`) and move the changes there.
 2. **Docs.** If behaviour or usage changed, check that `docs/guide/` and `CHANGELOG.md` (`## Unreleased`) say so. If the change finishes a roadmap item, mark it `done` in `docs/ROADMAP.md` with "this PR".
-3. **Check.** Run `scripts/check.sh`. On failure, fix and re-run. Never push red.
+3. **Check.** Run `scripts/check.sh` and gate on its exit code (do not pipe it into `tail`, which returns 0). On failure, fix and re-run. Never push red.
 4. **Commit.** Short subject; body says why, what changed, how it was verified. No attribution or co-author lines.
 5. **Push.** `git push -u origin <branch>`. Retry only on network errors (2s, 4s, 8s, 16s).
 6. **Open the PR** against `main` (only when Mic asked). Body sections:
