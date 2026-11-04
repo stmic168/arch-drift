@@ -24,7 +24,8 @@ Success measures: false-positive rate under 10% on pilot repositories; under a m
 | Dependency diagrams read by code (`%% archdrift: dependencies`, `--no-llm`), README diagrams checked in CI | #18 |
 | Pull request comment from the action | #19 |
 | `services` config for single-binary services (report-mode FPs on pilots 4 -> 1) | #21 |
-| Live re-run of the 4 pilots (current prompt, pinned commits): external actors stable; `pilot` accepts commit SHAs | this PR |
+| Live re-run of the 4 pilots (current prompt, pinned commits): external actors stable; `pilot` accepts commit SHAs | #22 |
+| Relations wired by the binary: report mode 0 false positives on all 4 pilots | this PR |
 
 ## Open
 
@@ -33,13 +34,7 @@ Success measures: false-positive rate under 10% on pilot repositories; under a m
 The most important open test: nobody but the author has used the tool on a real project. Mic runs `archdrift init --mode gate` and writes 3–5 rules, or attaches the repository to a session.
 Done when: lock reviewed, `check` run, every failing finding graded, false-positive rate recorded here.
 
-### 2. Relations wired by the binary (todo)
-
-The report-mode false positive left on the pilots, after a fresh run with the current prompt: Thanos' doc says Rule's "block files can be backed up to object storage". In the code, `cmd/thanos` (the composition root) passes a `pkg/shipper` uploader to the rule service, so `pkg/rules` never imports object storage and `MISSING_EDGE Rule -> Object Storage` fails in both Thanos cases. (The external-actor false positive this item first targeted is already fixed by the current prompt: Alert Component is external in both live runs.)
-Options to weigh before building: let a required relation be satisfied when the deployable that imports the source component also imports a component that reaches the target; or map shared helpers such as `pkg/shipper` to every doc component that uses them. Either must not hide the Cortex gate pilot's two true `MISSING_EDGE` findings.
-Done when: report mode on all 4 pilots has 0 false positives with the `locks-p07` locks, and the Cortex gate pilot stays 5/5.
-
-### 3. Claude GitHub Action for issues (later)
+### 2. Claude GitHub Action for issues (later)
 
 Mic opens an issue and mentions `@claude`, and the action works from `CLAUDE.md` and opens a pull request. Restricted to Mic. Uses the `ANTHROPIC_API_KEY` secret, so each run costs tokens. Do it once `CLAUDE.md` has been stable through a few pull requests.
 

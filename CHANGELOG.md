@@ -5,6 +5,7 @@ Releases are published by `.github/workflows/release.yml` when a tag `vX.Y.Z` on
 ## Unreleased
 
 - **Dependency diagrams**: Mermaid blocks marked `%% archdrift: dependencies` are read by Go code (arrow = depends on, `must not` label = forbidden, `Name<br/>code/id` labels). `--no-llm` builds the doc model from them alone, with no API call; otherwise they are merged into the LLM model. The as-built diagram carries the marker and code IDs, so it can be pasted into the doc and read back.
+- **Wired by the binary**: a configured service's required external system counts as present when one file of a deployable imports both (Thanos' `cmd/thanos/rule.go` builds the bucket for the rule service). Report-mode false positives on the pilots with current locks: 2 -> 0; Cortex gate pilot 5/5.
 - **`services`** in `archdrift.json`: components that run as separate processes inside one binary (Thanos, Cortex). A required relation between two services without an import is `UNVERIFIABLE` instead of `MISSING_EDGE`; ignored with `strict_protocols`. On the pilots, report-mode false positives go from 4 to 1 and the Cortex gate pilot stays 5/5.
 - **Pull request comment**: the action's `comment: "true"` posts one comment with the failing findings, their status and first evidence, and updates it on later pushes (`scripts/pr-comment.sh`). `check` writes it as `comment.md`. `init` turns it on.
 - README: a pipeline diagram, and archdrift's architecture as a dependency diagram that CI checks against the code with `--no-llm` (`archdrift.readme.json`).

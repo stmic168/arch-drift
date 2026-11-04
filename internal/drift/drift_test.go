@@ -358,6 +358,52 @@ func TestServices(t *testing.T) {
 	}
 }
 
+func TestWiredByDeployable(t *testing.T) {
+	bin := codemodel.Component{ID: "cmd/thanos", Deployable: true}
+	at := func(from, to, file string) codemodel.Edge {
+		return codemodel.Edge{From: from, To: to, Evidence: []codemodel.Location{loc(file, 1)}}
+	}
+	code := &codemodel.Model{
+		Components: []codemodel.Component{bin, comp("pkg/rules"), comp("pkg/query"), comp("pkg/logging"), comp("pkg/shipper"), comp("ext:objstore")},
+		Edges: []codemodel.Edge{
+			at("cmd/thanos", "pkg/rules", "cmd/thanos/rule.go"),
+			at("cmd/thanos", "pkg/logging", "cmd/thanos/rule.go"),
+			at("cmd/thanos", "pkg/shipper", "cmd/thanos/rule.go"), // rule.go builds the uploader
+			at("cmd/thanos", "pkg/query", "cmd/thanos/query.go"),
+			at("cmd/thanos", "ext:objstore", "cmd/thanos/compact.go"),
+			at("pkg/shipper", "ext:objstore", "pkg/shipper/shipper.go"),
+		},
+	}
+	comps := []docmodel.Component{dc("Rule", "pkg/rules"), dc("Querier", "pkg/query"), dc("Logging", "pkg/logging"), dc("Object Storage", "ext:objstore")}
+	typeOf := func(from string, o Options) string {
+		r := rel(from, "Object Storage", docmodel.KindRequired, "")
+		for _, f := range Diff(code, &docmodel.Model{Components: comps, Relations: []docmodel.Relation{r}}, o).Findings {
+			if f.Subject == from+" -> Object Storage" {
+				return f.Type
+			}
+		}
+		return "satisfied"
+	}
+	svc := Options{Services: []string{"pkg/rules", "pkg/query"}}
+	if got := typeOf("Rule", svc); got != "satisfied" {
+		t.Errorf("service wired to object storage in the binary's rule.go: %s, want satisfied", got)
+	}
+	if got := typeOf("Rule", Options{}); got != MissingEdge {
+		t.Errorf("without services config: %s, want MISSING_EDGE", got)
+	}
+	if got := typeOf("Logging", svc); got != MissingEdge {
+		t.Errorf("utility imported by the same file: %s, want MISSING_EDGE", got)
+	}
+	if got := typeOf("Querier", svc); got != MissingEdge {
+		t.Errorf("service whose wiring file has no object storage: %s, want MISSING_EDGE", got)
+	}
+	strict := svc
+	strict.StrictProtocols = true
+	if got := typeOf("Rule", strict); got != MissingEdge {
+		t.Errorf("strict_protocols: %s, want MISSING_EDGE", got)
+	}
+}
+
 func TestCompareBase(t *testing.T) {
 	mk := func(id string, failing bool, files ...string) Finding {
 		f := Finding{ID: id, Type: strings.SplitN(id, ":", 2)[0], Failing: failing}
