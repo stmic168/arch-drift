@@ -50,6 +50,7 @@ go build -o archdrift ./cmd/archdrift
 | `--doc-model` | | load a recorded doc model JSON and skip the API (ignores any lock) |
 | `--lock` | next to the doc (`design.md` -> `design.lock.json`) | lock file to read (`check`) or write (`lock`) |
 | `--no-lock` | | `check` only: ignore the lock and extract from the doc |
+| `--no-llm` | | build the doc model only from dependency diagrams in the doc ([below](#dependency-diagrams-no-llm)); no API call. Not with `--doc-model`. |
 | `--config` | `archdrift.json` at the repo root, if present | per-repo configuration ([Configuration](configuration.md)) |
 | `--baseline` | `archdrift.baseline.json` at the repo root, if present | accepted known drift ([Baseline](#baseline-archdriftbaselinejson)) |
 | `--base` | | `check` only: git revision to compare with (e.g. `origin/main`). Only drift introduced or worsened since then fails ([CI and pull requests](ci.md)). |
@@ -87,6 +88,33 @@ archdrift: drift detected: 5 failing finding(s), 1 unverifiable, 3 dropped claim
 report: /tmp/shop-report/report.md
 ```
 
+
+## Dependency diagrams (no LLM)
+
+A Mermaid flowchart that holds the line `%% archdrift: dependencies` is read by Go code instead of the LLM. In such a block every arrow means "depends on":
+
+```mermaid
+flowchart LR
+  %% archdrift: dependencies
+  api["API Gateway<br/>cmd/api"]
+  store["Store<br/>internal/store"]
+  pg[("PostgreSQL<br/>ext:postgres")]
+  api -->|in-process| orders["Orders<br/>internal/orders"] & catalog["Catalog<br/>internal/catalog"]
+  api -- must not --> store
+  orders --> store
+  store -->|SQL| pg
+```
+
+- **Nodes** are doc components. Code IDs go after a line break in the label (`Name<br/>id`, several separated by commas); a node without IDs is a component with no code (`MISSING_COMPONENT`), and an unknown ID is dropped and listed like any other.
+- **Arrows** (`-->`, `-.->`, `==>`, chains, `a --> b & c`) are required relations. An arrow labelled `must not`, `never`, `forbidden` or `not allowed` is a forbidden relation; any other label is the protocol (`HTTP`, `Kafka`, ...), with the same rules as a protocol the LLM reads.
+- **Quotes** are the diagram's source lines, so the verifier and the report work as usual.
+
+How it is used:
+
+- With `--no-llm`, the diagrams are the whole doc model: no API key, no cost, and the same result every run. `lock --no-llm` writes a lock from them.
+- Without it, a marked diagram is added to what the LLM read from the prose: its code IDs fill components the LLM left unmapped, and its arrows are added where the LLM has no relation between the same two components. So the diagram's rules hold even when an uncached LLM run misses one.
+- Diagrams without the marker are left to the LLM. Arrows in ordinary diagrams often show data flow (`producer --> queue --> consumer`), which is not the direction of the dependency; the marker is the doc author's statement that this diagram is about dependencies.
+- The as-built diagram in every report carries the marker and the code IDs, so it can be pasted into the doc and read back. `testdata/shop/design-diagram.md` states the fixture's rules this way and gives exactly the findings of the LLM path on `design.md`.
 
 ## Baseline (`archdrift.baseline.json`)
 
