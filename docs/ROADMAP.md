@@ -22,7 +22,8 @@ Success measures: false-positive rate under 10% on pilot repositories; under a m
 | Versioned releases, MIT license; v0.1.0 published | #15, #16 |
 | Agent workflow: `CLAUDE.md`, roadmap, skills, `scripts/check.sh`, Dependabot | #17 |
 | Dependency diagrams read by code (`%% archdrift: dependencies`, `--no-llm`), README diagrams checked in CI | #18 |
-| Pull request comment from the action | this PR |
+| Pull request comment from the action | #19 |
+| `services` config for single-binary services (report-mode FPs on pilots 4 -> 1) | this PR |
 
 ## Open
 
@@ -31,10 +32,10 @@ Success measures: false-positive rate under 10% on pilot repositories; under a m
 The most important open test: nobody but the author has used the tool on a real project. Mic runs `archdrift init --mode gate` and writes 3–5 rules, or attaches the repository to a session.
 Done when: lock reviewed, `check` run, every failing finding graded, false-positive rate recorded here.
 
-### 2. Runtime relations from `.proto` files (next)
+### 2. External actors drawn as boxes (next)
 
-Many `UNVERIFIABLE` relations are gRPC calls. Parse `service` definitions in `.proto` files (a small hand-written parser, no dependency) and map generated clients to the serving component, so "A calls B over gRPC" becomes checkable.
-Done when: on the Thanos or Cortex pilot, the share of `UNVERIFIABLE` relations drops, with no new false positives in the offline eval.
+The one false positive left in report mode on the pilots: Thanos' doc draws an "Alert Component" (Alertmanager, outside the codebase) in an ASCII box, and the model did not mark it `external`, so it is a `MISSING_COMPONENT`. Tighten the prompt for components that appear only in diagrams or boxes and name systems the code talks to, not packages.
+Done when: a fresh pilot lock for thanos-design marks it external, with no new dropped or missing claims elsewhere; report mode on all 4 pilots has 0 false positives. Costs about $0.03 per re-run pilot.
 
 ### 3. Claude GitHub Action for issues (later)
 
@@ -42,6 +43,7 @@ Mic opens an issue and mentions `@claude`, and the action works from `CLAUDE.md`
 
 ### Later (only when pilots ask for it)
 
+- gRPC relations from `.proto` files. Measured before building: none of the `UNVERIFIABLE` relations in the 4 pilots is a gRPC call between two internal components (9 of 10 involve an external system, 1 is HTTP), because generated-client imports already prove them as protocol edges. Worth it only for a repository whose gRPC clients live outside the serving component.
 - Other languages behind a `CodeModel` interface (Java/Kotlin, TypeScript, Python).
 - docker-compose and Kubernetes manifests (needs YAML, which conflicts with the single-dependency rule).
 - Several repositories against one system-level doc.

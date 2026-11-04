@@ -1,0 +1,4 @@
+{
+  "services": ["pkg/alertmanager", "pkg/compactor", "pkg/configs", "pkg/distributor", "pkg/frontend", "pkg/ingester",
+               "pkg/overrides", "pkg/parquetconverter", "pkg/purger", "pkg/querier", "pkg/ruler", "pkg/scheduler", "pkg/storegateway"]
+}

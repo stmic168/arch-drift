@@ -48,6 +48,13 @@ type Config struct {
 		Fail   bool     `json:"fail"`   // fail the check (default: list only)
 		Ignore []string `json:"ignore"` // component ID patterns to skip, e.g. "pkg/ext*"
 	} `json:"undocumented_components"`
+	// Services lists component ID patterns (path.Match syntax) for components
+	// that run as separate processes although they are built into one binary
+	// (Thanos, Cortex, Loki: one cmd/ with a mode per service). A required
+	// relation between two services is proven by an import; without one it
+	// is UNVERIFIABLE, since services talk over the network. Ignored when
+	// StrictProtocols is set: a rules doc's requirements stay import-checked.
+	Services []string `json:"services"`
 	// StrictProtocols: a runtime protocol on a relation counts only when the
 	// doc quote names it; protocols the model inferred are ignored and the
 	// relation is checked by imports. Recommended for rules docs.
@@ -116,6 +123,11 @@ func (c *Config) validate() error {
 			return fmt.Errorf("undocumented_components.ignore[%d]: bad pattern %q", i, p)
 		}
 	}
+	for i, p := range c.Services {
+		if _, err := path.Match(p, ""); err != nil || strings.TrimSpace(p) == "" {
+			return fmt.Errorf("services[%d]: bad pattern %q", i, p)
+		}
+	}
 	for i, p := range c.Exclude {
 		if strings.HasPrefix(p, "/") || strings.Contains(p, "..") || strings.Trim(p, "/") == "" {
 			return fmt.Errorf("exclude[%d]: path %q must be relative to the repo root", i, p)
@@ -154,5 +166,6 @@ func (c *Config) DiffOptions() drift.Options {
 		IgnoreUndocumented:         c.UndocumentedComponents.Ignore,
 		ReportUndocumentedEdges:    c.UndocumentedEdges.Fail != nil && !*c.UndocumentedEdges.Fail,
 		StrictProtocols:            c.StrictProtocols,
+		Services:                   c.Services,
 	}
 }

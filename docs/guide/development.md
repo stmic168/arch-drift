@@ -73,7 +73,7 @@ Users pin the action with `uses: stmic168/arch-drift@vX.Y.Z`; `go install ...@vX
 
 ## Pilot on public repositories
 
-`.github/workflows/pilot.yml` (manual) runs archdrift on any public Go repository: it shallow-clones the repo, prints `scan`, runs `lock` (one API call; only the doc and component IDs are sent), runs `check` from that lock, and prints the doc mapping and every finding to the log and job summary. Inputs: `repo` (owner/name), optional `ref`, `doc` (path in that repo; comma-separated for several files), optional `config` (a file under `pilot/` in this repo) and `model`. The log also prints the lock JSON, so a run can be replayed offline against the same mapping. Configs for pilot targets live in `pilot/` (e.g. `pilot/temporal.json`).
+`.github/workflows/pilot.yml` (manual) runs archdrift on any public Go repository: it shallow-clones the repo, prints `scan`, runs `lock` (one API call; only the doc and component IDs are sent), runs `check` from that lock, and prints the doc mapping and every finding to the log and job summary. Inputs: `repo` (owner/name), optional `ref`, `doc` (path in that repo; comma-separated for several files), optional `config` (a file under `pilot/` in this repo) and `model`. The log also prints the lock JSON, so a run can be replayed offline against the same mapping. Configs for pilot targets live in `pilot/` (`pilot/temporal.json`, and `pilot/thanos.json` / `pilot/cortex.json`, which list each project's services).
 
 ## Rules docs (gate mode)
 

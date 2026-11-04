@@ -1,0 +1,3 @@
+{
+  "services": ["pkg/compact", "pkg/query", "pkg/queryfrontend", "pkg/receive", "pkg/rules", "pkg/store"]
+}

@@ -17,6 +17,12 @@ pilot/eval/run.sh /tmp/archdrift /tmp/archdrift-eval
   `LOCKS=pilot/eval/locks-p06 pilot/eval/run.sh ...`.
 - `run.sh` shallow-clones each repository at the pinned commit (first run only),
   runs `archdrift check` from the lock, and calls `score.py`.
+- The Thanos and Cortex cases use `pilot/thanos.json` and `pilot/cortex.json`, which list
+  each project's services (separately run modes of one binary).
+  Score with these configs: 46 failing (5 TP, 24 FP, 17 NOISE); in report mode
+  (`undocumented_edges.fail=false`) 1 failing, an external actor graded FP. Before
+  `services`: 49 failing (27 FP), report mode 4 (all FP: three runtime calls between
+  services, one actor).
 - `labels.json` maps finding IDs to a grade: `TP` (real drift), `FP-mapping`
   (wrong because the doc mapping or relations were wrong or missing), `FP-runtime`
   (the relation exists at runtime but not as an import), `FP-actor` (an external
