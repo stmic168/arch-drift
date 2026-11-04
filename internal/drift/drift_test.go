@@ -404,6 +404,25 @@ func TestWiredByDeployable(t *testing.T) {
 	}
 }
 
+func TestRelationInsideOneComponent(t *testing.T) {
+	code := &codemodel.Model{Components: []codemodel.Component{comp("pilot/serviceregistry"), comp("pilot/xds")}}
+	comps := []docmodel.Component{dc("Kubernetes Controller", "pilot/serviceregistry"), dc("Service Entry Controller", "pilot/serviceregistry"), dc("XDS", "pilot/xds")}
+	rels := []docmodel.Relation{
+		rel("Kubernetes Controller", "Service Entry Controller", docmodel.KindRequired, ""),
+		rel("Kubernetes Controller", "XDS", docmodel.KindRequired, ""),
+	}
+	got := map[string]string{}
+	for _, f := range Diff(code, &docmodel.Model{Components: comps, Relations: rels}, Options{}).Findings {
+		got[f.Subject] = f.Type
+	}
+	if got["Kubernetes Controller -> Service Entry Controller"] != Unverifiable {
+		t.Errorf("relation inside one code component: %s, want UNVERIFIABLE", got["Kubernetes Controller -> Service Entry Controller"])
+	}
+	if got["Kubernetes Controller -> XDS"] != MissingEdge {
+		t.Errorf("relation between two components: %s, want MISSING_EDGE", got["Kubernetes Controller -> XDS"])
+	}
+}
+
 func TestCompareBase(t *testing.T) {
 	mk := func(id string, failing bool, files ...string) Finding {
 		f := Finding{ID: id, Type: strings.SplitN(id, ":", 2)[0], Failing: failing}

@@ -1,0 +1,218 @@
+{
+  "components": [
+    {
+      "id": "cni/cmd",
+      "paths": [
+        "cni/cmd"
+      ]
+    },
+    {
+      "id": "cni/pkg",
+      "paths": [
+        "cni/pkg"
+      ]
+    },
+    {
+      "id": "istioctl/cmd",
+      "paths": [
+        "istioctl/cmd"
+      ]
+    },
+    {
+      "id": "istioctl/pkg",
+      "paths": [
+        "istioctl/pkg"
+      ]
+    },
+    {
+      "id": "manifests",
+      "paths": [
+        "manifests"
+      ]
+    },
+    {
+      "id": "operator/cmd",
+      "paths": [
+        "operator/cmd"
+      ]
+    },
+    {
+      "id": "operator/pkg",
+      "paths": [
+        "operator/pkg"
+      ]
+    },
+    {
+      "id": "operator/version",
+      "paths": [
+        "operator/version"
+      ]
+    },
+    {
+      "id": "pilot/cmd",
+      "paths": [
+        "pilot/cmd"
+      ]
+    },
+    {
+      "id": "samples/extauthz",
+      "paths": [
+        "samples/extauthz"
+      ]
+    },
+    {
+      "id": "samples/health-check",
+      "paths": [
+        "samples/health-check"
+      ]
+    },
+    {
+      "id": "samples/jwt-server",
+      "paths": [
+        "samples/jwt-server"
+      ]
+    },
+    {
+      "id": "samples/tcp-echo",
+      "paths": [
+        "samples/tcp-echo"
+      ]
+    },
+    {
+      "id": "security/pkg",
+      "paths": [
+        "security/pkg"
+      ]
+    },
+    {
+      "id": "pilot/autoregistration",
+      "paths": [
+        "pilot/pkg/autoregistration"
+      ]
+    },
+    {
+      "id": "pilot/bootstrap",
+      "paths": [
+        "pilot/pkg/bootstrap"
+      ]
+    },
+    {
+      "id": "pilot/config",
+      "paths": [
+        "pilot/pkg/config"
+      ]
+    },
+    {
+      "id": "pilot/controllers",
+      "paths": [
+        "pilot/pkg/controllers"
+      ]
+    },
+    {
+      "id": "pilot/credentials",
+      "paths": [
+        "pilot/pkg/credentials"
+      ]
+    },
+    {
+      "id": "pilot/features",
+      "paths": [
+        "pilot/pkg/features"
+      ]
+    },
+    {
+      "id": "pilot/grpc",
+      "paths": [
+        "pilot/pkg/grpc"
+      ]
+    },
+    {
+      "id": "pilot/keycertbundle",
+      "paths": [
+        "pilot/pkg/keycertbundle"
+      ]
+    },
+    {
+      "id": "pilot/leaderelection",
+      "paths": [
+        "pilot/pkg/leaderelection"
+      ]
+    },
+    {
+      "id": "pilot/model",
+      "paths": [
+        "pilot/pkg/model"
+      ]
+    },
+    {
+      "id": "pilot/networking",
+      "paths": [
+        "pilot/pkg/networking"
+      ]
+    },
+    {
+      "id": "pilot/request",
+      "paths": [
+        "pilot/pkg/request"
+      ]
+    },
+    {
+      "id": "pilot/security",
+      "paths": [
+        "pilot/pkg/security"
+      ]
+    },
+    {
+      "id": "pilot/server",
+      "paths": [
+        "pilot/pkg/server"
+      ]
+    },
+    {
+      "id": "pilot/serviceregistry",
+      "paths": [
+        "pilot/pkg/serviceregistry"
+      ]
+    },
+    {
+      "id": "pilot/simulation",
+      "paths": [
+        "pilot/pkg/simulation"
+      ]
+    },
+    {
+      "id": "pilot/status",
+      "paths": [
+        "pilot/pkg/status"
+      ]
+    },
+    {
+      "id": "pilot/trustbundle",
+      "paths": [
+        "pilot/pkg/trustbundle"
+      ]
+    },
+    {
+      "id": "pilot/util",
+      "paths": [
+        "pilot/pkg/util"
+      ]
+    },
+    {
+      "id": "pilot/xds",
+      "paths": [
+        "pilot/pkg/xds"
+      ]
+    }
+  ],
+  "exclude": [
+    "cni/test",
+    "pilot/test",
+    "security/tools",
+    "tests",
+    "tools"
+  ],
+  "undocumented_edges": {
+    "fail": false
+  }
+}

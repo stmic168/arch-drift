@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "doc_sha256": "679f2072a1a6055f985109dc0955298323b32f58e6d4c253f7850623c15e5081",
+  "model": "claude-sonnet-5-5",
+  "code_ids": [
+    "clients/cmd",
+    "clients/pkg",
+    "cmd/chunks-inspect",
+    "cmd/dataobj-inspect",
+    "cmd/logcli",
+    "cmd/logline-util",
+    "cmd/logql-analyzer",
+    "cmd/loki",
+    "cmd/loki-canary",
+    "cmd/lokitool",
+    "cmd/migrate",
+    "cmd/querytee",
+    "ext:azure-blob",
+    "ext:gcs",
+    "ext:grpc",
+    "ext:objstore",
+    "ext:redis",
+    "ext:s3",
+    "pkg/analytics",
+    "pkg/bloombuild",
+    "pkg/bloomgateway",
+    "pkg/canary",
+    "pkg/chunkenc",
+    "pkg/columnar",
+    "pkg/compactor",
+    "pkg/compression",
+    "pkg/compute",
+    "pkg/dataobj",
+    "pkg/dataset",
+    "pkg/distributor",
+    "pkg/engine",
+    "pkg/expr",
+    "pkg/indexgateway",
+    "pkg/ingester",
+    "pkg/iter",
+    "pkg/kafka",
+    "pkg/kafkav2",
+    "pkg/labelaccess",
+    "pkg/limits",
+    "pkg/logcli",
+    "pkg/loghttp",
+    "pkg/logline",
+    "pkg/logproto",
+    "pkg/logql",
+    "pkg/logqlanalyzer",
+    "pkg/loki",
+    "pkg/lokifrontend",
+    "pkg/memory",
+    "pkg/pattern",
+    "pkg/push",
+    "pkg/querier",
+    "pkg/querytee",
+    "pkg/queue",
+    "pkg/ruler",
+    "pkg/runtime",
+    "pkg/scheduler",
+    "pkg/scratch",
+    "pkg/server",
+    "pkg/storage",
+    "pkg/tool",
+    "pkg/tracing",
+    "pkg/util",
+    "pkg/validation",
+    "pkg/xcap"
+  ],
+  "doc_model": {
+    "components": [
+      {
+        "name": "Kafka",
+        "code_ids": [
+          "pkg/kafka",
+          "pkg/kafkav2"
+        ],
+        "quote": "Loki can optionally use Apache Kafka, or a Kafka-protocol-compatible system, as a durable buffer on the write path.",
+        "external": true
+      },
+      {
+        "name": "client",
+        "code_ids": [],
+        "quote": "The query frontend merges the individual results into a final result and return it to the client.",
+        "external": true
+      },
+      {
+        "name": "distributor",
+        "code_ids": [
+          "pkg/distributor"
+        ],
+        "quote": "The distributor receives an HTTP POST request with streams and log lines."
+      },
+      {
+        "name": "ingester",
+        "code_ids": [
+          "pkg/ingester"
+        ],
+        "quote": "The ingester receives the stream with log lines and creates a chunk or appends to an existing chunk for the stream's data."
+      },
+      {
+        "name": "object storage",
+        "code_ids": [
+          "ext:azure-blob",
+          "ext:gcs",
+          "ext:objstore",
+          "ext:s3"
+        ],
+        "quote": "Loki stores all data in a single object storage backend, such as Amazon Simple Storage Service (S3), Google Cloud Storage (GCS), Azure Blob Storage, among others.",
+        "external": true
+      },
+      {
+        "name": "querier",
+        "code_ids": [
+          "pkg/querier"
+        ],
+        "quote": "The querier pulls sub-queries from the scheduler."
+      },
+      {
+        "name": "query frontend",
+        "code_ids": [
+          "pkg/lokifrontend"
+        ],
+        "quote": "The query frontend receives an HTTP GET request with a LogQL query."
+      },
+      {
+        "name": "query scheduler",
+        "code_ids": [
+          "pkg/scheduler"
+        ],
+        "quote": "passes them to the query scheduler"
+      }
+    ],
+    "relations": [
+      {
+        "from": "distributor",
+        "to": "Kafka",
+        "kind": "required",
+        "protocol": "Kafka",
+        "quote": "the distributor writes log streams as Kafka records to a configured topic"
+      },
+      {
+        "from": "distributor",
+        "to": "ingester",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "The distributor sends each stream to the appropriate ingester and its replicas (based on the configured replication factor)."
+      },
+      {
+        "from": "ingester",
+        "to": "Kafka",
+        "kind": "required",
+        "protocol": "Kafka",
+        "quote": "Each ingester consumes from exactly one Kafka partition, determined by its position in the partition ring."
+      },
+      {
+        "from": "querier",
+        "to": "ingester",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "The querier passes the query to all ingesters for in-memory data."
+      },
+      {
+        "from": "querier",
+        "to": "object storage",
+        "kind": "required",
+        "protocol": "",
+        "quote": "The querier lazily loads data from the backing store and runs the query against it if ingesters returned no or insufficient data."
+      },
+      {
+        "from": "querier",
+        "to": "query scheduler",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "The querier pulls sub-queries from the scheduler."
+      },
+      {
+        "from": "query frontend",
+        "to": "client",
+        "kind": "required",
+        "protocol": "HTTP",
+        "quote": "The query frontend merges the individual results into a final result and return it to the client."
+      },
+      {
+        "from": "query frontend",
+        "to": "query scheduler",
+        "kind": "required",
+        "protocol": "network",
+        "quote": "The query frontend splits the query into sub-queries and passes them to the query scheduler."
+      }
+    ]
+  }
+}

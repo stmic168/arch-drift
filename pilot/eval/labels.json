@@ -87,5 +87,17 @@
     "UNDOCUMENTED_EDGE:matching->internal-worker": "NOISE",
     "UNDOCUMENTED_EDGE:frontend->ext:temporal-sdk": "NOISE",
     "UNDOCUMENTED_EDGE:internal-worker->ext:temporal-sdk": "NOISE"
+  },
+  "loki": {},
+  "istio": {
+    "MISSING_COMPONENT:CRD Client": "FP-mapping",
+    "MISSING_COMPONENT:CRD Watcher": "FP-mapping",
+    "MISSING_COMPONENT:Discovery Filter": "FP-mapping",
+    "MISSING_COMPONENT:Gateway Deployment": "FP-mapping",
+    "MISSING_COMPONENT:Ingress Controller": "FP-mapping",
+    "MISSING_COMPONENT:Ingress Status Controller": "FP-mapping",
+    "MISSING_COMPONENT:Mesh Config": "FP-mapping",
+    "MISSING_COMPONENT:Multicluster Secret": "FP-mapping",
+    "MISSING_COMPONENT:Tag Watcher": "FP-mapping"
   }
 }

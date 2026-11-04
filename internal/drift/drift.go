@@ -350,6 +350,18 @@ func reaches(edges []codemodel.Edge, dst map[string]bool) bool {
 	return false
 }
 
+// sharedIDs returns the code IDs both sides of a relation map to, in order.
+func sharedIDs(a, b []string) []string {
+	in := set(b)
+	var out []string
+	for _, id := range a {
+		if in[id] {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 func set(ids []string) map[string]bool {
 	m := map[string]bool{}
 	for _, id := range ids {
@@ -589,6 +601,19 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 					ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
 					Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
 					Message: fmt.Sprintf("Not checked: no import from %s to %s, but the doc says they talk over %q, which can happen at runtime without one.", join(fc.CodeIDs), join(tc.CodeIDs), r.Protocol),
+					Code:    []codemodel.Location{}, DocQuote: r.Quote, DocFile: r.Source,
+				})
+				continue
+			}
+			// Both sides map to the same code component (a doc describing a
+			// component's internals): imports inside a component are not
+			// modeled, so the missing edge proves nothing.
+			if shared := sharedIDs(fc.CodeIDs, tc.CodeIDs); len(shared) > 0 {
+				addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeUnverifiable, r.Protocol)
+				res.Findings = append(res.Findings, Finding{
+					ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
+					Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
+					Message: fmt.Sprintf("Not checked: %s and %s both map to %s, and imports inside a component are not modeled. Split the component in archdrift.json to check this relation.", r.From, r.To, join(shared)),
 					Code:    []codemodel.Location{}, DocQuote: r.Quote, DocFile: r.Source,
 				})
 				continue

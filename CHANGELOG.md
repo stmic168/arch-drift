@@ -4,6 +4,11 @@ Releases are published by `.github/workflows/release.yml` when a tag `vX.Y.Z` on
 
 ## Unreleased
 
+## v0.2.0 (2026-11-04)
+
+Measured on six public pilots (offline eval in `pilot/eval/`, locks from live runs with the current prompt): in report mode, 0 false positives on Thanos (two docs), Cortex, Temporal and the held-out Loki; on the held-out Istio doc, 9 false positives remain (doc parts finer than the code components; see the roadmap). The Cortex rules pilot (gate mode) finds all 5 planted violations.
+
+- **Relation inside one component**: a required relation between two doc components that map to the same code component is `UNVERIFIABLE` (imports inside a component are not modeled) instead of `MISSING_EDGE`.
 - **Dependency diagrams**: Mermaid blocks marked `%% archdrift: dependencies` are read by Go code (arrow = depends on, `must not` label = forbidden, `Name<br/>code/id` labels). `--no-llm` builds the doc model from them alone, with no API call; otherwise they are merged into the LLM model. The as-built diagram carries the marker and code IDs, so it can be pasted into the doc and read back.
 - **Wired by the binary**: a configured service's required external system counts as present when one file of a deployable imports both (Thanos' `cmd/thanos/rule.go` builds the bucket for the rule service). Report-mode false positives on the pilots with current locks: 2 -> 0; Cortex gate pilot 5/5.
 - **`services`** in `archdrift.json`: components that run as separate processes inside one binary (Thanos, Cortex). A required relation between two services without an import is `UNVERIFIABLE` instead of `MISSING_EDGE`; ignored with `strict_protocols`. On the pilots, report-mode false positives go from 4 to 1 and the Cortex gate pilot stays 5/5.
