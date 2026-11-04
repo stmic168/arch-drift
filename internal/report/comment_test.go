@@ -17,7 +17,7 @@ func TestComment(t *testing.T) {
 			{Type: drift.ForbiddenEdge, Severity: "high", Failing: true, Subject: "API -> Store", Status: drift.StatusNew, Code: []codemodel.Location{loc("cmd/api/main.go", 10), loc("cmd/api/x.go", 3)}},
 			{Type: drift.UndocumentedEdge, Severity: "low", Failing: true, Subject: "A | B -> C", Status: drift.StatusWorsened,
 				Code: []codemodel.Location{loc("a/old.go", 1), loc("a/new.go", 9)}, NewEvidence: []codemodel.Location{loc("a/new.go", 9)}},
-			{Type: drift.MissingEdge, Severity: "medium", Failing: true, Subject: "Old -> Gone", Status: drift.StatusExisting},
+			{Type: drift.MissingEdge, Severity: "medium", Subject: "Old -> Gone", Status: drift.StatusExisting}, // CompareBase clears Failing
 			{Type: drift.Unverifiable, Severity: "info", Subject: "W -> X"},
 			{Type: drift.UndocumentedComponent, Severity: "info", Subject: "pkg/x", Status: drift.StatusExisting}, // pre-existing but never failing: not counted
 		},
