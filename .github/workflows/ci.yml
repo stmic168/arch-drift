@@ -38,5 +38,7 @@ jobs:
           echo "exit code: $code"
           test "$code" -eq 1
           jq -e '.usage.source == "lock"' out-lock/report.json
+      - name: README architecture diagram matches the code (no API call)
+        run: go run ./cmd/archdrift check --repo . --doc README.md --no-llm --config archdrift.readme.json --out out-readme
       - name: Local check script (keeps scripts/check.sh working)
         run: scripts/check.sh

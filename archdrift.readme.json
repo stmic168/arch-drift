@@ -1,0 +1,9 @@
+{
+  "external": [
+    {"id": "ext:anthropic", "prefixes": ["github.com/anthropics/anthropic-sdk-go"]}
+  ],
+  "strict_protocols": true,
+  "undocumented_components": {
+    "fail": true
+  }
+}
