@@ -47,3 +47,7 @@ The full rules are in [How it works](docs/guide/how-it-works.md#pipeline).
 | [Changelog](CHANGELOG.md) | what each release contains |
 
 This repository checks itself against [ADR-001](docs/architecture-rules.md) on every pull request.
+
+## License
+
+[MIT](LICENSE)

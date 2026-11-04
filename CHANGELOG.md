@@ -14,4 +14,5 @@ First tagged release. Everything below landed through pull requests #1 to #14.
 - **scan**: prints the code model.
 - **Configuration**: custom components, external IDs, excludes, shared and protocol packages, transitive rules, `strict_protocols`, report-only undocumented edges.
 - **CI**: composite GitHub Action with `--base` diff mode (only new or worsened drift fails) and SARIF upload.
+- **License**: MIT.
 - **version**: `archdrift version`; `init` pins the generated workflow to the release it was run from.
