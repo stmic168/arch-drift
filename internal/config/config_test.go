@@ -30,7 +30,8 @@ func TestLoadValid(t *testing.T) {
   "transitive": {"required": true},
   "undocumented_components": {"fail": true, "ignore": ["pkg/ext*"]},
   "undocumented_edges": {"fail": false},
-  "strict_protocols": true
+  "strict_protocols": true,
+  "services": ["pkg/ingester", "pkg/quer*"]
 }`))
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +47,7 @@ func TestLoadValid(t *testing.T) {
 	if got := c.ScanOptions(); !reflect.DeepEqual(got, want) {
 		t.Errorf("ScanOptions = %+v", got)
 	}
-	if d := c.DiffOptions(); !d.TransitiveRequired || d.TransitiveForbidden || !d.FailUndocumentedComponents || len(d.IgnoreUndocumented) != 1 || !d.ReportUndocumentedEdges || !d.StrictProtocols {
+	if d := c.DiffOptions(); !d.TransitiveRequired || d.TransitiveForbidden || !d.FailUndocumentedComponents || len(d.IgnoreUndocumented) != 1 || !d.ReportUndocumentedEdges || !d.StrictProtocols || !reflect.DeepEqual(d.Services, []string{"pkg/ingester", "pkg/quer*"}) {
 		t.Errorf("DiffOptions = %+v", d)
 	}
 	// Omitted default_layout keeps the default layout.
@@ -71,6 +72,8 @@ func TestLoadRejects(t *testing.T) {
 		"bad external id": `{"external": [{"id": "s3", "prefixes": ["x"]}]}`,
 		"no prefixes":     `{"external": [{"id": "ext:s3", "prefixes": []}]}`,
 		"bad exclude":     `{"exclude": ["/tmp"]}`,
+		"bad service":     `{"services": ["pkg/[x"]}`,
+		"empty service":   `{"services": [""]}`,
 	}
 	for name, body := range cases {
 		if _, err := Load(write(t, body)); err == nil || !strings.Contains(err.Error(), FileName) {

@@ -78,6 +78,36 @@ type Options struct {
 	// IgnoreUndocumented lists component ID patterns (path.Match syntax, e.g.
 	// "pkg/ext*") never reported as UNDOCUMENTED_COMPONENT.
 	IgnoreUndocumented []string
+	// Services lists component ID patterns for components that run as
+	// separate processes inside one binary. A required relation between two
+	// services with no import is UNVERIFIABLE instead of MISSING_EDGE.
+	// Ignored with StrictProtocols.
+	Services []string
+}
+
+func (o Options) isService(id string) bool {
+	for _, p := range o.Services {
+		if ok, _ := path.Match(p, id); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// betweenServices reports whether a required relation joins two different
+// services, so a missing import proves nothing (they can talk at runtime).
+func (o Options) betweenServices(from, to []string) bool {
+	if o.StrictProtocols || len(o.Services) == 0 {
+		return false
+	}
+	for _, f := range from {
+		for _, t := range to {
+			if f != t && o.isService(f) && o.isService(t) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (o Options) ignoredUndocumented(id string) bool {
@@ -444,6 +474,16 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 					addGraph(chain[0].From, chain[len(chain)-1].To, EdgeOK, "via "+strings.Join(via[1:len(via)-1], ", "))
 					continue
 				}
+			}
+			if opts.betweenServices(fc.CodeIDs, tc.CodeIDs) {
+				addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeUnverifiable, r.Protocol)
+				res.Findings = append(res.Findings, Finding{
+					ID: Unverifiable + ":" + subject, Type: Unverifiable, Severity: Info, Failing: false,
+					Subject: subject, From: join(fc.CodeIDs), To: join(tc.CodeIDs), Protocol: r.Protocol,
+					Message: fmt.Sprintf("Not checked: no import from %s to %s, but both run as separate services (config services), which can call each other at runtime without one.", join(fc.CodeIDs), join(tc.CodeIDs)),
+					Code:    []codemodel.Location{}, DocQuote: r.Quote, DocFile: r.Source,
+				})
+				continue
 			}
 			if IsNetworkProtocol(proto) {
 				// Components in one binary often call each other over HTTP/gRPC

@@ -14,9 +14,9 @@ locks=$(realpath "${LOCKS:-$here/locks}") # LOCKS=dir replays another set of pil
 
 # case | repo | commit | config (relative to pilot/, or -) | docs (comma-separated)
 cases=(
-  "thanos-design|thanos-io/thanos|176ba656c70f426291995db8097a262b2e80124c|-|docs/design.md"
-  "thanos-multi|thanos-io/thanos|176ba656c70f426291995db8097a262b2e80124c|-|docs/design.md,docs/components/receive.md,docs/components/query-frontend.md,docs/components/query.md,docs/components/store.md"
-  "cortex|cortexproject/cortex|a55f3193543cc386f2b32de3a17f24f9d86973ef|-|docs/architecture.md"
+  "thanos-design|thanos-io/thanos|176ba656c70f426291995db8097a262b2e80124c|thanos.json|docs/design.md"
+  "thanos-multi|thanos-io/thanos|176ba656c70f426291995db8097a262b2e80124c|thanos.json|docs/design.md,docs/components/receive.md,docs/components/query-frontend.md,docs/components/query.md,docs/components/store.md"
+  "cortex|cortexproject/cortex|a55f3193543cc386f2b32de3a17f24f9d86973ef|cortex.json|docs/architecture.md"
   "temporal|temporalio/temporal|8fcaa51f023112a34f1180d8ea679a4912eacca4|temporal.json|docs/architecture/README.md"
 )
 

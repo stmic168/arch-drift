@@ -320,6 +320,44 @@ func TestStrictProtocols(t *testing.T) {
 	}
 }
 
+func TestServices(t *testing.T) {
+	code := &codemodel.Model{
+		Components: []codemodel.Component{comp("pkg/rules"), comp("pkg/query"), comp("pkg/alert"), comp("pkg/dedup")},
+		Edges:      []codemodel.Edge{edge("pkg/alert", "pkg/dedup", 3)},
+	}
+	comps := []docmodel.Component{dc("Rule", "pkg/alert", "pkg/rules"), dc("Querier", "pkg/query", "pkg/dedup")}
+	discover := rel("Rule", "Querier", docmodel.KindRequired, "") // "Rule nodes discover query nodes"
+	typeOf := func(code *codemodel.Model, comps []docmodel.Component, o Options) string {
+		res := Diff(code, &docmodel.Model{Components: comps, Relations: []docmodel.Relation{discover}}, o)
+		for _, f := range res.Findings {
+			if f.Subject == "Rule -> Querier" {
+				return f.Type
+			}
+		}
+		return "satisfied"
+	}
+	services := Options{Services: []string{"pkg/rules", "pkg/quer*"}}
+	noImport := &codemodel.Model{Components: code.Components}
+	if got := typeOf(noImport, comps, Options{}); got != MissingEdge {
+		t.Errorf("no services config: %s, want MISSING_EDGE", got)
+	}
+	if got := typeOf(noImport, comps, services); got != Unverifiable {
+		t.Errorf("two services, no import: %s, want UNVERIFIABLE", got)
+	}
+	if got := typeOf(code, comps, services); got != "satisfied" {
+		t.Errorf("two services with an import between their packages: %s, want satisfied", got)
+	}
+	strict := services
+	strict.StrictProtocols = true
+	if got := typeOf(noImport, comps, strict); got != MissingEdge {
+		t.Errorf("services with strict_protocols: %s, want MISSING_EDGE (rules docs stay import-checked)", got)
+	}
+	libOnly := []docmodel.Component{dc("Rule", "pkg/rules"), dc("Querier", "pkg/dedup")}
+	if got := typeOf(noImport, libOnly, services); got != MissingEdge {
+		t.Errorf("target is not a service: %s, want MISSING_EDGE", got)
+	}
+}
+
 func TestCompareBase(t *testing.T) {
 	mk := func(id string, failing bool, files ...string) Finding {
 		f := Finding{ID: id, Type: strings.SplitN(id, ":", 2)[0], Failing: failing}
