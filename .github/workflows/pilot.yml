@@ -11,7 +11,7 @@ on:
         description: Public GitHub repository (owner/name)
         required: true
       ref:
-        description: Branch or tag to check out (empty = default branch)
+        description: Branch, tag or commit SHA to check out (empty = default branch)
         required: false
         default: ""
       doc:
@@ -77,8 +77,12 @@ jobs:
 
       - name: Clone target
         run: |
+          # A branch, tag or commit SHA (the offline eval pins commits, which
+          # git clone --branch cannot fetch).
           if [ -n "$REF" ]; then
-            git clone --depth 1 --branch "$REF" "https://github.com/$REPO" target
+            git init -q target
+            git -C target fetch -q --depth 1 "https://github.com/$REPO" "$REF"
+            git -C target checkout -q FETCH_HEAD
           else
             git clone --depth 1 "https://github.com/$REPO" target
           fi
