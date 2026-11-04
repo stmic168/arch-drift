@@ -94,6 +94,21 @@ func (o Options) isService(id string) bool {
 	return false
 }
 
+// services returns the IDs among ids that are configured services, or none
+// with StrictProtocols (as for betweenServices).
+func (o Options) services(ids []string) []string {
+	if o.StrictProtocols {
+		return nil
+	}
+	var out []string
+	for _, id := range ids {
+		if o.isService(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // betweenServices reports whether a required relation joins two different
 // services, so a missing import proves nothing (they can talk at runtime).
 func (o Options) betweenServices(from, to []string) bool {
@@ -267,6 +282,80 @@ func importPath(code *codemodel.Model, from, to []string) []codemodel.Edge {
 		}
 	}
 	return nil
+}
+
+// wiredByDeployable finds the common way a service reaches an external
+// system in a single binary: the deployable's main package builds the client
+// (an object-storage bucket, a database handle) and hands it to the service,
+// so the service never imports it. It returns a file of a deployable that
+// imports a package of from and, in the same file, either the target or a
+// component with an import path to it. Callers pass only configured services
+// as from: utilities are imported by the same files and would otherwise
+// satisfy any claim.
+func wiredByDeployable(code *codemodel.Model, from, to []string) (file, deployable string, ok bool) {
+	src, dst := set(from), set(to)
+	byFrom := map[string][]codemodel.Edge{}
+	for _, e := range code.Edges {
+		byFrom[e.From] = append(byFrom[e.From], e)
+	}
+	files := func(e codemodel.Edge) map[string]bool {
+		m := map[string]bool{}
+		for _, l := range e.Evidence {
+			m[l.File] = true
+		}
+		return m
+	}
+	var best string
+	var bestDep string
+	for d, edges := range byFrom {
+		if src[d] || !code.IsDeployable(d) {
+			continue
+		}
+		wiring := map[string]bool{} // files of d importing the source
+		for _, e := range edges {
+			if src[e.To] {
+				for f := range files(e) {
+					wiring[f] = true
+				}
+			}
+		}
+		if len(wiring) == 0 {
+			continue
+		}
+		for _, e := range edges {
+			if src[e.To] {
+				continue
+			}
+			if !dst[e.To] && !reaches(byFrom[e.To], dst) && importPath(code, []string{e.To}, to) == nil {
+				continue
+			}
+			for f := range files(e) {
+				if wiring[f] && (best == "" || f < best) {
+					best, bestDep = f, d
+				}
+			}
+		}
+	}
+	return best, bestDep, best != ""
+}
+
+// reaches reports whether one of edges imports a component in dst directly
+// (importPath only returns paths of two or more edges).
+func reaches(edges []codemodel.Edge, dst map[string]bool) bool {
+	for _, e := range edges {
+		if dst[e.To] {
+			return true
+		}
+	}
+	return false
+}
+
+func set(ids []string) map[string]bool {
+	m := map[string]bool{}
+	for _, id := range ids {
+		m[id] = true
+	}
+	return m
 }
 
 func protocolHit(code *codemodel.Model, from, to []string) (codemodel.Edge, bool) {
@@ -484,6 +573,13 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 					Code:    []codemodel.Location{}, DocQuote: r.Quote, DocFile: r.Source,
 				})
 				continue
+			}
+			// A service's external system can be wired in by the binary.
+			if svc := opts.services(fc.CodeIDs); len(svc) > 0 && allOf(tc.CodeIDs, isExternal) {
+				if file, dep, ok := wiredByDeployable(code, svc, tc.CodeIDs); ok {
+					addGraph(fc.CodeIDs[0], tc.CodeIDs[0], EdgeOK, "wired by "+dep+" ("+file+")")
+					continue
+				}
 			}
 			if IsNetworkProtocol(proto) {
 				// Components in one binary often call each other over HTTP/gRPC

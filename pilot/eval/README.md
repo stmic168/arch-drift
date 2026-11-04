@@ -26,6 +26,10 @@ pilot/eval/run.sh /tmp/archdrift /tmp/archdrift-eval
   doc's "hash ring -> Consul/Etcd" relations that both earlier runs had, so
   `pkg/ring -> ext:consul` and `-> ext:etcd` are undocumented edges (FP-mapping):
   run-to-run LLM variation, which reviewing the lock catches.
+  With the wired-by-the-binary rule (a service's external system imported by
+  the same deployable file as the service), the two Rule -> Object Storage
+  findings are satisfied: 41 failing (5 TP, 16 FP, 20 NOISE), report mode 0 on
+  all four cases (also 0 with `locks-p06`).
 - `run.sh` shallow-clones each repository at the pinned commit (first run only),
   runs `archdrift check` from the lock, and calls `score.py`.
 - The Thanos and Cortex cases use `pilot/thanos.json` and `pilot/cortex.json`, which list
