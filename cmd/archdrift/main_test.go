@@ -708,3 +708,104 @@ func TestBaseWithoutTheRepo(t *testing.T) {
 		t.Errorf("stdout: %s", so.String())
 	}
 }
+
+func TestIncrementalLock(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "shop")
+	copyTree(t, fixtureRepo, repo)
+	doc := filepath.Join(repo, "design.md")
+	lockPath := filepath.Join(repo, "design.lock.json")
+	var so, se bytes.Buffer
+
+	// 1. Doc unchanged: nothing to do, and no extractor call.
+	if code := run(context.Background(), []string{"lock", "--repo", repo, "--doc", doc}, &so, &se, failingExtractor(t)); code != 0 {
+		t.Fatalf("exit %d: %s", code, se.String())
+	}
+	if !strings.Contains(so.String(), "is up to date with the doc; nothing to do") {
+		t.Fatalf("stdout: %s", so.String())
+	}
+
+	// 2. The architect reviews the lock and decides Payments has no code yet.
+	l, err := docmodel.LoadLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, c := range l.DocModel.Components {
+		if c.Name == "Payments" {
+			l.DocModel.Components[i].CodeIDs = []string{}
+		}
+	}
+	if err := docmodel.WriteLock(lockPath, l); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. The doc gains a component; the fresh extraction maps Payments as before.
+	b, _ := os.ReadFile(doc)
+	os.WriteFile(doc, append(b, []byte("\nThe **Audit** log records every order.\n")...), 0o644)
+	fresh, _ := docmodel.LoadFile(fixtureModel)
+	fresh.Components = append(fresh.Components, docmodel.Component{Name: "Audit", CodeIDs: []string{}, Quote: "The **Audit** log records every order."})
+	freshPath := filepath.Join(dir, "fresh.json")
+	fb, _ := json.Marshal(fresh)
+	os.WriteFile(freshPath, fb, 0o644)
+
+	so.Reset()
+	if code := run(context.Background(), []string{"lock", "--repo", repo, "--doc", doc, "--doc-model", freshPath}, &so, &se, nil); code != 0 {
+		t.Fatalf("exit %d: %s", code, se.String())
+	}
+	for _, s := range []string{"Changes since the previous lock", "conflict component Payments: kept reviewed (no code); model now suggests internal/payments", "added    component Audit"} {
+		if !strings.Contains(so.String(), s) {
+			t.Errorf("stdout missing %q:\n%s", s, so.String())
+		}
+	}
+	l, _ = docmodel.LoadLock(lockPath)
+	got := map[string]string{}
+	for _, c := range l.DocModel.Components {
+		got[c.Name] = strings.Join(c.CodeIDs, ",")
+	}
+	if got["Payments"] != "" || got["Audit"] != "" || got["Orders"] != "internal/orders" {
+		t.Errorf("merged lock = %v (the reviewed Payments mapping must survive)", got)
+	}
+	if _, ok := got["Audit"]; !ok {
+		t.Error("Audit was not added")
+	}
+	// --fresh replaces the review with the extraction.
+	so.Reset()
+	run(context.Background(), []string{"lock", "--repo", repo, "--doc", doc, "--doc-model", freshPath, "--fresh"}, &so, &se, nil)
+	l, _ = docmodel.LoadLock(lockPath)
+	for _, c := range l.DocModel.Components {
+		if c.Name == "Payments" && strings.Join(c.CodeIDs, ",") != "internal/payments" {
+			t.Errorf("--fresh: Payments = %v", c.CodeIDs)
+		}
+	}
+	if strings.Contains(so.String(), "Changes since the previous lock") {
+		t.Error("--fresh must not merge")
+	}
+}
+
+func TestSuggestedDocUpdates(t *testing.T) {
+	out := t.TempDir()
+	runFixture(t, out)
+	md, _ := os.ReadFile(filepath.Join(out, "report.md"))
+	for _, s := range []string{
+		"## Suggested doc updates",
+		"**Code:** remove the dependency API Gateway -> Store (`cmd/api/main.go:10`), which the doc forbids.",
+		"**Doc:** \"Notifier\" has no code.",
+		"**Code or doc:** add the dependency Catalog -> Store",
+		"**Doc:** describe the dependency Orders -> PostgreSQL (`internal/orders/repo/repo.go:5`)",
+		"### As-built diagram",
+		"  c_api_gateway --> c_store\n",
+		"  c_orders --> c_postgresql\n",
+	} {
+		if !bytes.Contains(md, []byte(s)) {
+			t.Errorf("report missing %q", s)
+		}
+	}
+	// pkg/metrics is imported but imports nothing: a utility, not suggested.
+	if bytes.Contains(md, []byte("describe `pkg/metrics`")) {
+		t.Error("utility component suggested")
+	}
+	// Catalog has no edge to the Store in code, so the as-built diagram has none.
+	if bytes.Contains(md, []byte("c_catalog --> c_store")) {
+		t.Error("as-built diagram invented an edge")
+	}
+}

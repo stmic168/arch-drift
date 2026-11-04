@@ -25,7 +25,7 @@ go build -o archdrift ./cmd/archdrift
 
 ```bash
 ./archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock]
-./archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>]
+./archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--fresh]
 ./archdrift baseline --repo <path> --doc <design.md> [same flags as check]
 ./archdrift scan --repo <path> [--config <json>] [--json]
 ```
@@ -59,7 +59,8 @@ The LLM mapping can differ between uncached runs. To make `check` deterministic 
 
 Rules:
 
-- The lock stores the doc's SHA-256. If the doc changes, `check` exits 2 with "lock file is stale"; re-run `archdrift lock` and review the diff.
+- The lock stores the doc's SHA-256. If the doc changes, `check` exits 2 with "lock file is stale"; re-run `archdrift lock`.
+- Re-running `lock` keeps the review. If the doc is unchanged it does nothing (no API call). After a doc edit it extracts again and merges: reviewed claims whose quote is still in the doc are kept as they are, new ones are added, and claims whose quote is gone are removed. It prints "Changes since the previous lock" with `conflict` (reviewed claim kept, the model now suggests something else), `added`, `removed` and `kept` (still in the doc but not extracted this time) lines, so only the changes need review. `--fresh` ignores the previous lock.
 - If code components were added or removed since the lock was written, `check` still runs and adds a note at the top of the report. New components show as `UNDOCUMENTED_COMPONENT` until you re-lock; mappings to removed components are dropped as unknown code IDs.
 - The verifier runs on every `check`, so a hand edit with a quote that is not in the doc or an unknown code ID is dropped and listed, not trusted.
 - Without a lock next to the doc, `check` extracts live as before. `--no-lock` forces that, `--doc-model` overrides both.
@@ -182,7 +183,9 @@ A component is a deployable (separately run program) when a `main` package sits 
    | `UNVERIFIABLE` | info | no | relation that imports cannot prove or disprove: the target is a deployable (a main package cannot be imported); the protocol is a runtime transport (HTTP, gRPC, Kafka, queue, ...) and there is no import; or one endpoint has no code (missing, or external by design) |
 
    Doc components the model marks `external` (users, SDK workers, dashboards, managed services) are not reported as `MISSING_COMPONENT` when they have no code ID. Relations to `ext:*` are always checkable: the driver import is the evidence, directly or through a client wrapper (`store -> cacheutil -> memcached` satisfies "Store uses Memcached"). A required relation is also satisfied by a protocol edge. The protocol `network` (separately running nodes that talk without a named protocol) counts as a runtime transport. By default only direct imports count; `transitive` in the config extends that to import paths. Edges touching an undocumented component are not reported again as `UNDOCUMENTED_EDGE`.
-5. **Report** (`internal/report`): `report.md` (findings with evidence, coloured Mermaid diagram, dropped claims, token usage and estimated cost), `report.json` and `report.sarif`. Output has no timestamps and is byte-identical across runs on the same inputs.
+5. **Report** (`internal/report`): `report.md` (findings with evidence, suggested doc updates, an as-built diagram, a coloured drift diagram, dropped claims, token usage and estimated cost), `report.json` and `report.sarif`.
+
+   **Suggested doc updates** turn each finding into a concrete edit, generated from the evidence without an LLM: which import to remove for a forbidden dependency, which doc sentence to update for a missing one, what to describe for an undocumented dependency, and the top application-like undocumented components (those that import more components than import them). The **as-built diagram** is a Mermaid flowchart of the documented components with the dependencies the code has between them today, under the doc's names (gRPC-client-only links dashed), ready to paste into the doc. Output has no timestamps and is byte-identical across runs on the same inputs.
 
 ## Layout
 
