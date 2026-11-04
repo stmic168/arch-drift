@@ -33,12 +33,17 @@ const (
 const usage = `usage:
   archdrift check --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path> | --no-lock] [--config <json>] [--base <git ref>]
   archdrift baseline --repo <path> --doc <design.md> [same flags as check]
+  archdrift init --repo <path> --doc <design.md> [--mode report|gate] [--force]
   archdrift scan --repo <path> [--config <json>] [--json]
   archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--config <json>]
 
 check  compares code with the doc and writes <out>/report.md, report.json and
        report.sarif (for GitHub code scanning).
 lock   extracts the doc model once and writes a lock file to review and commit.
+init   sets a repository up: proposes archdrift.json (components for layouts
+       other than cmd/internal/pkg, excludes for tests and tools, the options
+       for the mode), writes a GitHub workflow using the action, and in gate
+       mode starts a rules doc from a template if it does not exist. No API call.
 scan   prints the code model (components, deployables, import edges) without
        reading any doc; use it to write or check archdrift.json.
 baseline  accepts every current failing finding into archdrift.baseline.json
@@ -81,9 +86,12 @@ func main() {
 // run executes the CLI. newExtractor, when non-nil, replaces the live API
 // extractor (used by tests).
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtractor func(model string) docmodel.Extractor) int {
-	if len(args) == 0 || (args[0] != "check" && args[0] != "lock" && args[0] != "baseline" && args[0] != "scan") {
+	if len(args) == 0 || (args[0] != "check" && args[0] != "lock" && args[0] != "baseline" && args[0] != "scan" && args[0] != "init") {
 		fmt.Fprint(stderr, usage)
 		return exitError
+	}
+	if args[0] == "init" {
+		return runInit(args[1:], stdout, stderr)
 	}
 	if args[0] == "scan" {
 		return runScan(args[1:], stdout, stderr)
