@@ -17,6 +17,23 @@
 - For the live path: Anthropic credentials (`ANTHROPIC_API_KEY`, or any source the SDK resolves, e.g. `ant auth login`)
 - The only external dependency is the official `anthropic-sdk-go`; parsing uses the stdlib `go/parser`
 
+## Getting started
+
+```bash
+go install github.com/stmic168/arch-drift/cmd/archdrift@main
+archdrift init --repo . --doc docs/architecture.md            # overview doc: report mode
+archdrift init --repo . --doc docs/architecture-rules.md --mode gate   # rules doc (ADR)
+```
+
+`init` makes no API call. It:
+
+- proposes `archdrift.json`: components for top-level directories outside `cmd/`, `internal/`, `pkg/` (one per child directory, or one for the whole directory when it has more than 10 children, e.g. `common/`), excludes for test, tooling and mock directories, and the options for the mode (`undocumented_edges.fail: false`; in gate mode also `strict_protocols`);
+- writes `.github/workflows/archdrift.yml` at the git root, using the action with `upload-sarif`;
+- in gate mode, starts the rules doc from an ADR template listing the detected components, if it does not exist;
+- prints the coverage and the next steps (`lock`, review, `check`, `baseline`, commit). Existing files are kept unless `--force`.
+
+On Temporal (a `service/`, `common/`, `api/` layout) it proposes 23 components with 89% coverage, against 5% for the default layout.
+
 ## Usage
 
 ```bash
@@ -28,6 +45,7 @@ go build -o archdrift ./cmd/archdrift
 ./archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--fresh]
 ./archdrift baseline --repo <path> --doc <design.md> [same flags as check]
 ./archdrift scan --repo <path> [--config <json>] [--json]
+./archdrift init --repo <path> --doc <design.md> [--mode report|gate] [--force]
 ```
 
 `scan` prints the code model only (components, which are deployables, packages, import edges in and out) without reading a doc or calling the API. Use it to see how archdrift sees a repo and to write `archdrift.json`.
