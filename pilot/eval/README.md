@@ -15,6 +15,17 @@ pilot/eval/run.sh /tmp/archdrift /tmp/archdrift-eval
 - `locks-p06/` holds the locks from the phase 0.6 prompt runs (41573056751,
   41573059694, 41573062580, 41573065740); replay them with
   `LOCKS=pilot/eval/locks-p06 pilot/eval/run.sh ...`.
+- `locks-p07/` holds fresh locks from pilot runs 41798769126 (thanos-design),
+  41798773477 (thanos-multi), 41798777715 (cortex) and 41798781963 (temporal), made
+  with the current prompt at the pinned commits and the `services` configs
+  ($0.22 in total). Replay with `LOCKS=pilot/eval/locks-p07`: 43 failing (5 TP,
+  18 FP, 20 NOISE); report mode 2 failing, both `MISSING_EDGE Rule -> Object
+  Storage` in the Thanos cases (FP: Thanos' binary wires Rule to `pkg/shipper`,
+  which uploads blocks, so `pkg/rules` never imports object storage). Alert
+  Component is marked external in both Thanos runs. In cortex this run missed the
+  doc's "hash ring -> Consul/Etcd" relations that both earlier runs had, so
+  `pkg/ring -> ext:consul` and `-> ext:etcd` are undocumented edges (FP-mapping):
+  run-to-run LLM variation, which reviewing the lock catches.
 - `run.sh` shallow-clones each repository at the pinned commit (first run only),
   runs `archdrift check` from the lock, and calls `score.py`.
 - The Thanos and Cortex cases use `pilot/thanos.json` and `pilot/cortex.json`, which list

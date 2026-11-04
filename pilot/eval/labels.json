@@ -41,7 +41,8 @@
     "UNDOCUMENTED_EDGE:pkg/receive->internal/cortex": "NOISE",
     "UNDOCUMENTED_EDGE:pkg/receive->pkg/api": "NOISE",
     "UNDOCUMENTED_EDGE:pkg/receive->pkg/shipper": "FP-mapping",
-    "UNDOCUMENTED_EDGE:pkg/rules->internal/cortex": "NOISE"
+    "UNDOCUMENTED_EDGE:pkg/rules->internal/cortex": "NOISE",
+    "UNDOCUMENTED_EDGE:pkg/ui->pkg/rules": "NOISE"
   },
   "cortex": {
     "MISSING_EDGE:Alertmanager -> Ruler": "FP-mapping",
@@ -71,7 +72,9 @@
     "UNDOCUMENTED_EDGE:pkg/scheduler->pkg/querier": "NOISE",
     "UNDOCUMENTED_EDGE:pkg/storegateway->pkg/configs": "FP-mapping",
     "UNDOCUMENTED_EDGE:pkg/storegateway->pkg/ring": "TP",
-    "UNDOCUMENTED_EDGE:pkg/querier->ext:objstore": "FP-mapping"
+    "UNDOCUMENTED_EDGE:pkg/querier->ext:objstore": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/ring->ext:consul": "FP-mapping",
+    "UNDOCUMENTED_EDGE:pkg/ring->ext:etcd": "FP-mapping"
   },
   "temporal": {
     "MISSING_EDGE:History Service -> Matching Service": "FP-config",
