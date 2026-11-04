@@ -49,7 +49,7 @@ The full rules are in [How it works](docs/guide/how-it-works.md#pipeline).
 
 ## Architecture
 
-archdrift's own packages, as a dependency diagram: each arrow means "depends on", and `must not` marks a rule. The `%% archdrift: dependencies` line lets archdrift read this diagram by code, with no LLM. CI runs `archdrift check --repo . --doc README.md --no-llm --config archdrift.readme.json` on every pull request, so a new import between packages, a new package, or a package other than the Doc model importing the Anthropic SDK fails the build until this diagram (and, for rules, [ADR-001](docs/architecture-rules.md)) is updated.
+archdrift's own packages, as a dependency diagram: each solid arrow means "depends on", and a dotted `must not` arrow is a rule. The `%% archdrift: dependencies` line lets archdrift read this diagram by code, with no LLM. CI runs `archdrift check --repo . --doc README.md --no-llm --config archdrift.readme.json` on every pull request, so a new import between packages, a new package, or a package other than the Doc model importing the Anthropic SDK fails the build until this diagram (and, for rules, [ADR-001](docs/architecture-rules.md)) is updated.
 
 ```mermaid
 flowchart LR
@@ -59,10 +59,10 @@ flowchart LR
   drift --> code & doc
   report --> code & doc & drift
   doc --> api[("Anthropic API<br/>ext:anthropic")]
-  code -- must not --> api
-  drift -- must not --> api
-  report -- must not --> api
-  config -- must not --> api
+  code -. must not .-> api
+  drift -. must not .-> api
+  report -. must not .-> api
+  config -. must not .-> api
 ```
 
 ## Documentation
