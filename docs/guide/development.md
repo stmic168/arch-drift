@@ -40,6 +40,14 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 - `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: `go vet`, `go test`, an offline fixture run with `--doc-model`, and a run that reads the committed `testdata/shop/design.lock.json`; both must exit 1.
 - `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture (with `--no-lock`), so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), prints the doc model and dropped claims to the log, fails if the failing findings differ from `expected.json` (a different `UNVERIFIABLE` set is only a notice, since it depends on how the model reads runtime relations), puts `report.md` in the job summary, and uploads the reports as an artifact. You can pick a branch under **Use workflow from**. GitHub only shows **Run workflow** once the workflow file is on the default branch.
 
+## Releases
+
+1. Add a `## vX.Y.Z (...)` section to [CHANGELOG.md](../../CHANGELOG.md) and merge it to `main`.
+2. Tag the merge commit and push the tag: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
+3. `.github/workflows/release.yml` checks that the tag is on `main` and has a changelog section, runs vet and tests, builds `archdrift` for Linux, macOS (amd64, arm64) and Windows (amd64) with the version embedded (`archdrift version`), and creates the GitHub release with the archives, `checksums.txt` and the changelog section as notes.
+
+Users pin the action with `uses: stmic168/arch-drift@vX.Y.Z`; `go install ...@vX.Y.Z` reports the same version.
+
 ## Pilot on public repositories
 
 `.github/workflows/pilot.yml` (manual) runs archdrift on any public Go repository: it shallow-clones the repo, prints `scan`, runs `lock` (one API call; only the doc and component IDs are sent), runs `check` from that lock, and prints the doc mapping and every finding to the log and job summary. Inputs: `repo` (owner/name), optional `ref`, `doc` (path in that repo; comma-separated for several files), optional `config` (a file under `pilot/` in this repo) and `model`. The log also prints the lock JSON, so a run can be replayed offline against the same mapping. Configs for pilot targets live in `pilot/` (e.g. `pilot/temporal.json`).

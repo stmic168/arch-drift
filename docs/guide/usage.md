@@ -11,7 +11,7 @@
 ## Getting started
 
 ```bash
-go install github.com/stmic168/arch-drift/cmd/archdrift@main
+go install github.com/stmic168/arch-drift/cmd/archdrift@latest
 archdrift init --repo . --doc docs/architecture.md            # overview doc: report mode
 archdrift init --repo . --doc docs/architecture-rules.md --mode gate   # rules doc (ADR)
 ```
@@ -19,7 +19,7 @@ archdrift init --repo . --doc docs/architecture-rules.md --mode gate   # rules d
 `init` makes no API call. It:
 
 - proposes `archdrift.json`: components for top-level directories outside `cmd/`, `internal/`, `pkg/` (one per child directory, or one for the whole directory when it has more than 10 children, e.g. `common/`), excludes for test, tooling and mock directories, and the options for the mode (`undocumented_edges.fail: false`; in gate mode also `strict_protocols`);
-- writes `.github/workflows/archdrift.yml` at the git root, using the action with `upload-sarif`;
+- writes `.github/workflows/archdrift.yml` at the git root, using the action with `upload-sarif`, pinned to the release `init` was installed from (`@main` for a development build);
 - in gate mode, starts the rules doc from an ADR template listing the detected components, if it does not exist;
 - prints the coverage and the next steps (`lock`, review, `check`, `baseline`, commit). Existing files are kept unless `--force`.
 
