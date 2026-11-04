@@ -1,12 +1,21 @@
 name: release
 
-# Push a tag vX.Y.Z on main to publish a release: tests run, binaries for
+# Push a tag vX.Y.Z on main, or publish a release with a new tag vX.Y.Z in the
+# GitHub UI, to publish a release: tests run, binaries for
 # Linux, macOS and Windows are built with the version embedded, and a GitHub
-# release is created with the binaries, SHA-256 checksums and the CHANGELOG
-# section for the tag as notes.
+# release is created (or the UI release completed) with the binaries, SHA-256
+# checksums and the CHANGELOG section for the tag as notes.
 on:
   push:
     tags: ["v*.*.*"]
+  release:
+    types: [published]
+
+# Publishing in the UI can fire both events; run them one after the other
+# (the second only re-uploads the same files).
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
   contents: write # create the release
@@ -61,4 +70,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" dist/* --verify-tag --title "archdrift $TAG" --notes-file notes.md
+        # A release created in the GitHub UI ("Draft a new release", new tag on
+        # publish) already exists when this runs: attach the binaries to it.
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            [ -n "$(gh release view "$TAG" --json body --jq .body)" ] || gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" dist/* --verify-tag --title "archdrift $TAG" --notes-file notes.md
+          fi
