@@ -20,7 +20,7 @@ Success measures: false-positive rate under 10% on pilot repositories; under a m
 | Dogfood: ADR-001 checked on every PR | #13 |
 | Docs split into `docs/guide/` | #14 |
 | Versioned releases, MIT license | #15, #16 |
-| Agent workflow: `CLAUDE.md`, roadmap, skills, `scripts/check.sh`, Dependabot | this PR |
+| Agent workflow: `CLAUDE.md`, roadmap, skills, `scripts/check.sh`, Dependabot | #17 |
 
 ## Open
 
