@@ -31,8 +31,13 @@ func Comment(r *Report) string {
 	}
 
 	var rows []drift.Finding
+	existing := 0 // pre-existing findings that would fail without --base
 	for _, f := range r.Findings {
-		if f.Failing && f.Accepted == nil && f.Status != drift.StatusExisting {
+		switch {
+		case !f.Failing || f.Accepted != nil:
+		case f.Status == drift.StatusExisting:
+			existing++
+		default:
 			rows = append(rows, f)
 		}
 	}
@@ -62,8 +67,8 @@ func Comment(r *Report) string {
 	}
 
 	var info []string
-	if s.Existing > 0 {
-		info = append(info, fmt.Sprintf("%d pre-existing", s.Existing))
+	if existing > 0 {
+		info = append(info, fmt.Sprintf("%d pre-existing", existing))
 	}
 	if s.Fixed > 0 {
 		info = append(info, fmt.Sprintf("%d fixed by this change", s.Fixed))
