@@ -36,6 +36,7 @@ const usage = `usage:
   archdrift init --repo <path> --doc <design.md> [--mode report|gate] [--force]
   archdrift scan --repo <path> [--config <json>] [--json]
   archdrift lock  --repo <path> --doc <design.md> [--out <dir>] [--model <id>] [--doc-model <json>] [--lock <path>] [--config <json>]
+  archdrift version
 
 check  compares code with the doc and writes <out>/report.md, report.json and
        report.sarif (for GitHub code scanning).
@@ -86,6 +87,10 @@ func main() {
 // run executes the CLI. newExtractor, when non-nil, replaces the live API
 // extractor (used by tests).
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, newExtractor func(model string) docmodel.Extractor) int {
+	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
+		fmt.Fprintln(stdout, "archdrift", toolVersion())
+		return 0
+	}
 	if len(args) == 0 || (args[0] != "check" && args[0] != "lock" && args[0] != "baseline" && args[0] != "scan" && args[0] != "init") {
 		fmt.Fprint(stderr, usage)
 		return exitError

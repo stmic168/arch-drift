@@ -9,7 +9,7 @@
 Requires Go 1.25+. Only `lock` calls the Anthropic API (`ANTHROPIC_API_KEY`); `check` reads the committed lock and is free and deterministic.
 
 ```bash
-go install github.com/stmic168/arch-drift/cmd/archdrift@main
+go install github.com/stmic168/arch-drift/cmd/archdrift@latest
 archdrift init  --repo . --doc docs/architecture.md        # config + workflow, no API call (--mode gate for a rules doc)
 archdrift lock  --repo . --doc docs/architecture.md        # one API call: review and commit docs/architecture.lock.json
 archdrift check --repo . --doc docs/architecture.md        # exit 0 no drift, 1 drift, 2 error
@@ -43,6 +43,11 @@ The full rules are in [How it works](docs/guide/how-it-works.md#pipeline).
 | [Configuration](docs/guide/configuration.md) | choosing report or gate mode, every `archdrift.json` field |
 | [CI and pull requests](docs/guide/ci.md) | the GitHub Action, `--base` diff mode, SARIF |
 | [How it works](docs/guide/how-it-works.md) | what is sent to the API, code model, doc model, verifier, drift rules, report, limitations |
-| [Development](docs/guide/development.md) | status, layout, tests, this repository's CI, pilots, offline evaluation |
+| [Development](docs/guide/development.md) | status, layout, tests, this repository's CI, releases, pilots, offline evaluation |
+| [Changelog](CHANGELOG.md) | what each release contains |
 
 This repository checks itself against [ADR-001](docs/architecture-rules.md) on every pull request.
+
+## License
+
+[MIT](LICENSE)

@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: stmic168/arch-drift@main
+      - uses: stmic168/arch-drift@v0.1.0  # pin a release; @main follows development
         with:
           docs: docs/architecture.md        # comma- or newline-separated
           # config: archdrift.json          # default: archdrift.json in repo-path
