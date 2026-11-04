@@ -31,13 +31,15 @@ func Comment(r *Report) string {
 	}
 
 	var rows []drift.Finding
-	existing := 0 // pre-existing findings that would fail without --base
+	existing := 0 // pre-existing findings that would fail without --base (as the CLI note counts them)
 	for _, f := range r.Findings {
 		switch {
-		case !f.Failing || f.Accepted != nil:
+		case f.Accepted != nil:
 		case f.Status == drift.StatusExisting:
-			existing++
-		default:
+			if f.Severity != drift.Info {
+				existing++
+			}
+		case f.Failing:
 			rows = append(rows, f)
 		}
 	}
