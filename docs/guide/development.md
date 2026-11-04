@@ -43,8 +43,8 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 ## Releases
 
 1. Add a `## vX.Y.Z (...)` section to [CHANGELOG.md](../../CHANGELOG.md) and merge it to `main`.
-2. Tag the merge commit and push the tag: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
-3. `.github/workflows/release.yml` checks that the tag is on `main` and has a changelog section, runs vet and tests, builds `archdrift` for Linux, macOS (amd64, arm64) and Windows (amd64) with the version embedded (`archdrift version`), and creates the GitHub release with the archives, `checksums.txt` and the changelog section as notes.
+2. Tag the merge commit and push the tag: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`. Or in the GitHub UI: **Releases**, **Draft a new release**, type `vX.Y.Z` under **Choose a tag** and pick **Create new tag on publish**, target `main`, leave the description empty (the changelog section fills it), **Publish release**.
+3. `.github/workflows/release.yml` checks that the tag is on `main` and has a changelog section, runs vet and tests, builds `archdrift` for Linux, macOS (amd64, arm64) and Windows (amd64) with the version embedded (`archdrift version`), and creates the GitHub release (or completes the one made in the UI) with the archives, `checksums.txt` and the changelog section as notes.
 
 Users pin the action with `uses: stmic168/arch-drift@vX.Y.Z`; `go install ...@vX.Y.Z` reports the same version.
 
