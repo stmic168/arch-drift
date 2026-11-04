@@ -18,6 +18,9 @@ cases=(
   "thanos-multi|thanos-io/thanos|176ba656c70f426291995db8097a262b2e80124c|thanos.json|docs/design.md,docs/components/receive.md,docs/components/query-frontend.md,docs/components/query.md,docs/components/store.md"
   "cortex|cortexproject/cortex|a55f3193543cc386f2b32de3a17f24f9d86973ef|cortex.json|docs/architecture.md"
   "temporal|temporalio/temporal|8fcaa51f023112a34f1180d8ea679a4912eacca4|temporal.json|docs/architecture/README.md"
+  # Held out: added after the rules were tuned on the four cases above.
+  "loki|grafana/loki|18cff3699124cbb9d00622c28c3386e525cbe523|loki.json|docs/sources/get-started/architecture.md"
+  "istio|istio/istio|6ecc966869fad55930e4b433e96047a0b01154fb|istio.json|architecture/networking/pilot.md"
 )
 
 for c in "${cases[@]}"; do

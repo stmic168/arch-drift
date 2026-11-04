@@ -38,6 +38,20 @@ pilot/eval/run.sh /tmp/archdrift /tmp/archdrift-eval
   (`undocumented_edges.fail=false`) 1 failing, an external actor graded FP. Before
   `services`: 49 failing (27 FP), report mode 4 (all FP: three runtime calls between
   services, one actor).
+- **Held out**: `loki` and `istio` were added after the rules were tuned on the
+  four cases above, to check for overfitting (runs 41809520171 and 41809524645,
+  $0.06; locks in `locks-p07/`; configs `pilot/loki.json` and `pilot/istio.json`
+  start from `archdrift init --mode report`).
+  - Loki (single binary, `services` from its module list): 0 failing; the 7 doc
+    relations are checked by imports and hold.
+  - Istio (`architecture/networking/pilot.md`, a doc on istiod's internals): 9
+    failing, all FP-mapping: `MISSING_COMPONENT` for parts that exist in packages
+    finer than the components (CRD Client is `pilot/pkg/config/kube/crdclient`
+    inside `pilot/config`; Ingress Controller, Gateway Deployment, Tag Watcher,
+    Discovery Filter, Mesh Config, Multicluster Secret, CRD Watcher likewise).
+    The model leaves them unmapped rather than guess. Two `MISSING_EDGE` between
+    doc components mapped to the same code component were an archdrift bug, now
+    `UNVERIFIABLE`.
 - `labels.json` maps finding IDs to a grade: `TP` (real drift), `FP-mapping`
   (wrong because the doc mapping or relations were wrong or missing), `FP-runtime`
   (the relation exists at runtime but not as an import), `FP-actor` (an external

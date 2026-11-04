@@ -1,0 +1,343 @@
+{
+  "version": 1,
+  "doc_sha256": "3b5dca05d27fe4be65a515dd49727af322a69757ab9272c474806f14cfdf4a99",
+  "model": "claude-sonnet-5-5",
+  "code_ids": [
+    "cni/cmd",
+    "cni/pkg",
+    "ext:grpc",
+    "istioctl/cmd",
+    "istioctl/pkg",
+    "manifests",
+    "operator/cmd",
+    "operator/pkg",
+    "operator/version",
+    "pilot/autoregistration",
+    "pilot/bootstrap",
+    "pilot/cmd",
+    "pilot/config",
+    "pilot/controllers",
+    "pilot/credentials",
+    "pilot/features",
+    "pilot/grpc",
+    "pilot/keycertbundle",
+    "pilot/leaderelection",
+    "pilot/model",
+    "pilot/networking",
+    "pilot/request",
+    "pilot/security",
+    "pilot/server",
+    "pilot/serviceregistry",
+    "pilot/simulation",
+    "pilot/status",
+    "pilot/trustbundle",
+    "pilot/util",
+    "pilot/xds",
+    "pkg/activenotifier",
+    "pkg/adsc",
+    "pkg/art",
+    "pkg/backoff",
+    "pkg/bootstrap",
+    "pkg/channels",
+    "pkg/cluster",
+    "pkg/cmd",
+    "pkg/collateral",
+    "pkg/config",
+    "pkg/ctrlz",
+    "pkg/dns",
+    "pkg/env",
+    "pkg/envoy",
+    "pkg/features",
+    "pkg/file",
+    "pkg/filewatcher",
+    "pkg/flag",
+    "pkg/fuzz",
+    "pkg/hbone",
+    "pkg/http",
+    "pkg/istio-agent",
+    "pkg/jwt",
+    "pkg/keepalive",
+    "pkg/kube",
+    "pkg/lazy",
+    "pkg/log",
+    "pkg/maps",
+    "pkg/model",
+    "pkg/monitoring",
+    "pkg/network",
+    "pkg/platform",
+    "pkg/proto",
+    "pkg/proxy",
+    "pkg/ptr",
+    "pkg/queue",
+    "pkg/revisions",
+    "pkg/security",
+    "pkg/sleep",
+    "pkg/slices",
+    "pkg/spiffe",
+    "pkg/test",
+    "pkg/testcerts",
+    "pkg/tracing",
+    "pkg/typemap",
+    "pkg/uds",
+    "pkg/url",
+    "pkg/util",
+    "pkg/version",
+    "pkg/wasm",
+    "pkg/webhooks",
+    "pkg/wellknown",
+    "pkg/workloadapi",
+    "pkg/xds",
+    "pkg/zdsapi",
+    "samples/extauthz",
+    "samples/health-check",
+    "samples/jwt-server",
+    "samples/tcp-echo",
+    "security/pkg"
+  ],
+  "doc_model": {
+    "components": [
+      {
+        "name": "Auto Registration",
+        "code_ids": [
+          "pilot/autoregistration"
+        ],
+        "quote": "The Auto Registration controller is pretty unique as a controller"
+      },
+      {
+        "name": "CRD Client",
+        "code_ids": [],
+        "quote": "The most common is reading from Kubernetes via the `crdclient` package."
+      },
+      {
+        "name": "CRD Watcher",
+        "code_ids": [],
+        "quote": "we introduce a \"CRD Watcher\" component that watches the CRDs in the cluster"
+      },
+      {
+        "name": "Config Serving",
+        "code_ids": [
+          "pilot/xds",
+          "pkg/xds"
+        ],
+        "quote": "Config serving is the layer that actually accepts proxy clients, connected over bidirectional gRPC streams, and serve them the required configuration."
+      },
+      {
+        "name": "ConfigStore",
+        "code_ids": [
+          "pilot/config",
+          "pkg/config"
+        ],
+        "quote": "The `ConfigStore` reads a variety of resources and exposes them over a standard interface (Get, List, etc)."
+      },
+      {
+        "name": "Credentials Controller",
+        "code_ids": [
+          "pilot/credentials"
+        ],
+        "quote": "The Credentials controller exposes access to TLS certificate information, stored in cluster as `Secrets`."
+      },
+      {
+        "name": "Discovery Filter",
+        "code_ids": [],
+        "quote": "The Discovery Filter controller is used to implement the `discoverySelectors` field of `MeshConfig`."
+      },
+      {
+        "name": "Gateway Deployment",
+        "code_ids": [],
+        "quote": "The Gateway Deployment controller enables users to create a Gateway"
+      },
+      {
+        "name": "Generators",
+        "code_ids": [
+          "pilot/networking",
+          "pilot/xds"
+        ],
+        "quote": "This is done by `Generators`, which register a function to build a given type."
+      },
+      {
+        "name": "Health Check",
+        "code_ids": [
+          "pilot/status"
+        ],
+        "quote": "The Health Check controller additionally controls the health status of the `WorkloadEntry`."
+      },
+      {
+        "name": "Ingress Controller",
+        "code_ids": [],
+        "quote": "Like CRDs, the `Ingress` controller implements `ConfigStore`"
+      },
+      {
+        "name": "Ingress Status Controller",
+        "code_ids": [],
+        "quote": "This is done by the Ingress Status controller."
+      },
+      {
+        "name": "Istiod",
+        "code_ids": [
+          "pilot/bootstrap",
+          "pilot/cmd",
+          "pilot/server"
+        ],
+        "quote": "This document describes the high level architecture of the Istio control plane, Istiod."
+      },
+      {
+        "name": "Kubernetes",
+        "code_ids": [],
+        "quote": "These resources can be sourced from Kubernetes (via watches), files, or over xDS",
+        "external": true
+      },
+      {
+        "name": "Kubernetes Controller",
+        "code_ids": [
+          "pilot/serviceregistry"
+        ],
+        "quote": "one driven from core Kubernetes types (\"Kube Controller\")"
+      },
+      {
+        "name": "Mesh Config",
+        "code_ids": [],
+        "quote": "Mesh Config controller is a pretty simple controller"
+      },
+      {
+        "name": "Multicluster Secret",
+        "code_ids": [],
+        "quote": "This is rooted in the Multicluster Secret controller, which reads `kubeconfig` files (stored as `Secrets`), and creating Kubernetes clients for each."
+      },
+      {
+        "name": "Proxy Client",
+        "code_ids": [
+          "pkg/envoy",
+          "pkg/proxy"
+        ],
+        "quote": "dynamically configure proxies (Envoy sidecars and ingress, gRPC, ztunnel, and more)",
+        "external": true
+      },
+      {
+        "name": "Push Queue",
+        "code_ids": [
+          "pilot/xds"
+        ],
+        "quote": "eventually enqueued in the Push Queue."
+      },
+      {
+        "name": "PushContext",
+        "code_ids": [
+          "pilot/model"
+        ],
+        "quote": "`PushContext` is an immutable snapshot of the current state of the world."
+      },
+      {
+        "name": "Service Entry Controller",
+        "code_ids": [
+          "pilot/serviceregistry"
+        ],
+        "quote": "one by Istio types (\"ServiceEntry controller\")"
+      },
+      {
+        "name": "ServiceDiscovery",
+        "code_ids": [
+          "pilot/serviceregistry"
+        ],
+        "quote": "The other primary interface is the ServiceDiscovery."
+      },
+      {
+        "name": "Tag Watcher",
+        "code_ids": [],
+        "quote": "this takes a dependency on the \"Tag Watcher\" controller"
+      },
+      {
+        "name": "Webhook Controllers",
+        "code_ids": [
+          "pkg/webhooks"
+        ],
+        "quote": "The webhook controllers handle this patching."
+      }
+    ],
+    "relations": [
+      {
+        "from": "Auto Registration",
+        "to": "Proxy Client",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "the inputs to the controller are XDS connections"
+      },
+      {
+        "from": "CRD Watcher",
+        "to": "CRD Client",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "crd--Depends-->ccs"
+      },
+      {
+        "from": "Credentials Controller",
+        "to": "Multicluster Secret",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "scr-->mcsc"
+      },
+      {
+        "from": "Gateway Deployment",
+        "to": "Tag Watcher",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "this takes a dependency on the \"Tag Watcher\" controller"
+      },
+      {
+        "from": "Generators",
+        "to": "PushContext",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "`Generators` get as input the `Proxy` (a representation of the current client), the current `PushContext` snapshot, and a list of config updates that caused the change."
+      },
+      {
+        "from": "Kubernetes Controller",
+        "to": "Multicluster Secret",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "ksd-->mcsc"
+      },
+      {
+        "from": "Kubernetes Controller",
+        "to": "Service Entry Controller",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "ksd<--\"Data Sharing\"-->sesd"
+      },
+      {
+        "from": "Proxy Client",
+        "to": "Config Serving",
+        "kind": "required",
+        "protocol": "gRPC",
+        "quote": "Config serving is the layer that actually accepts proxy clients, connected over bidirectional gRPC streams, and serve them the required configuration."
+      },
+      {
+        "from": "PushContext",
+        "to": "ConfigStore",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "`PushContext` is built up by querying the above layers."
+      },
+      {
+        "from": "PushContext",
+        "to": "ServiceDiscovery",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "`PushContext` is built up by querying the above layers."
+      },
+      {
+        "from": "Service Entry Controller",
+        "to": "Kubernetes Controller",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "ksd<--\"Data Sharing\"-->sesd"
+      },
+      {
+        "from": "Tag Watcher",
+        "to": "Gateway Deployment",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "twc--Depends-->gdc"
+      }
+    ]
+  }
+}
