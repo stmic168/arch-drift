@@ -2,6 +2,10 @@
 
 Releases are published by `.github/workflows/release.yml` when a tag `vX.Y.Z` on `main` is pushed. Each tag needs a section here; its text becomes the release notes.
 
+## Unreleased
+
+- Development: `CLAUDE.md`, `docs/ROADMAP.md`, project skills (`/ship`, `/next`, `/pilot`), `scripts/check.sh`, Dependabot.
+
 ## v0.1.0 (first release)
 
 First tagged release. Everything below landed through pull requests #1 to #14.

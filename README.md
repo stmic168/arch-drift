@@ -45,6 +45,7 @@ The full rules are in [How it works](docs/guide/how-it-works.md#pipeline).
 | [How it works](docs/guide/how-it-works.md) | what is sent to the API, code model, doc model, verifier, drift rules, report, limitations |
 | [Development](docs/guide/development.md) | status, layout, tests, this repository's CI, releases, pilots, offline evaluation |
 | [Changelog](CHANGELOG.md) | what each release contains |
+| [Roadmap](docs/ROADMAP.md) | what is done and what comes next |
 
 This repository checks itself against [ADR-001](docs/architecture-rules.md) on every pull request.
 
