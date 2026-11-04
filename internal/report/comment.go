@@ -27,7 +27,7 @@ func Comment(r *Report) string {
 		fmt.Fprintf(&b, "### archdrift: %d failing finding(s)\n\n", s.Failing)
 	}
 	if r.Base != "" {
-		fmt.Fprintf(&b, "Compared with `%s`: only drift this change introduces or worsens fails.\n\n", r.Base)
+		fmt.Fprintf(&b, "Compared with `%s`: only drift this change introduces or worsens fails.\n\n", shortRev(r.Base))
 	}
 
 	var rows []drift.Finding
@@ -89,6 +89,15 @@ func Comment(r *Report) string {
 	}
 	b.WriteString("Full report with doc quotes and suggested fixes: the job summary of this check.\n")
 	return b.String()
+}
+
+// shortRev shortens a full commit SHA (the action passes the pull request
+// base as one) to 7 characters; branch names and short SHAs are kept.
+func shortRev(rev string) string {
+	if len(rev) == 40 && strings.Trim(rev, "0123456789abcdef") == "" {
+		return rev[:7]
+	}
+	return rev
 }
 
 // commentEvidence is the evidence a reviewer opens first: new evidence for a

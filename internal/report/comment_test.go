@@ -45,6 +45,13 @@ func TestComment(t *testing.T) {
 	}
 }
 
+func TestCommentShortensBaseSHA(t *testing.T) {
+	got := Comment(&Report{Base: "222df2d99dba554c612d2372c349de3ba1536093", Summary: Summary{ByType: map[string]int{}}})
+	if !strings.Contains(got, "Compared with `222df2d`:") {
+		t.Errorf("base SHA not shortened:\n%s", got)
+	}
+}
+
 func TestCommentCapsRows(t *testing.T) {
 	r := &Report{Summary: Summary{Failing: maxCommentRows + 5, ByType: map[string]int{}}}
 	for i := 0; i < maxCommentRows+5; i++ {
