@@ -23,7 +23,8 @@ Success measures: false-positive rate under 10% on pilot repositories; under a m
 | Agent workflow: `CLAUDE.md`, roadmap, skills, `scripts/check.sh`, Dependabot | #17 |
 | Dependency diagrams read by code (`%% archdrift: dependencies`, `--no-llm`), README diagrams checked in CI | #18 |
 | Pull request comment from the action | #19 |
-| `services` config for single-binary services (report-mode FPs on pilots 4 -> 1) | this PR |
+| `services` config for single-binary services (report-mode FPs on pilots 4 -> 1) | #21 |
+| Live re-run of the 4 pilots (current prompt, pinned commits): external actors stable; `pilot` accepts commit SHAs | this PR |
 
 ## Open
 
@@ -32,10 +33,11 @@ Success measures: false-positive rate under 10% on pilot repositories; under a m
 The most important open test: nobody but the author has used the tool on a real project. Mic runs `archdrift init --mode gate` and writes 3–5 rules, or attaches the repository to a session.
 Done when: lock reviewed, `check` run, every failing finding graded, false-positive rate recorded here.
 
-### 2. External actors drawn as boxes (next)
+### 2. Relations wired by the binary (todo)
 
-The one false positive left in report mode on the pilots: Thanos' doc draws an "Alert Component" (Alertmanager, outside the codebase) in an ASCII box, and the model did not mark it `external`, so it is a `MISSING_COMPONENT`. Tighten the prompt for components that appear only in diagrams or boxes and name systems the code talks to, not packages.
-Done when: a fresh pilot lock for thanos-design marks it external, with no new dropped or missing claims elsewhere; report mode on all 4 pilots has 0 false positives. Costs about $0.03 per re-run pilot.
+The report-mode false positive left on the pilots, after a fresh run with the current prompt: Thanos' doc says Rule's "block files can be backed up to object storage". In the code, `cmd/thanos` (the composition root) passes a `pkg/shipper` uploader to the rule service, so `pkg/rules` never imports object storage and `MISSING_EDGE Rule -> Object Storage` fails in both Thanos cases. (The external-actor false positive this item first targeted is already fixed by the current prompt: Alert Component is external in both live runs.)
+Options to weigh before building: let a required relation be satisfied when the deployable that imports the source component also imports a component that reaches the target; or map shared helpers such as `pkg/shipper` to every doc component that uses them. Either must not hide the Cortex gate pilot's two true `MISSING_EDGE` findings.
+Done when: report mode on all 4 pilots has 0 false positives with the `locks-p07` locks, and the Cortex gate pilot stays 5/5.
 
 ### 3. Claude GitHub Action for issues (later)
 
