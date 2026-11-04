@@ -33,6 +33,12 @@ inputs:
   upload-sarif:
     description: Upload report.sarif to GitHub code scanning (needs permission security-events write).
     default: "false"
+  comment:
+    description: On pull requests, post one comment with the failing findings and their status, and update it on later pushes (needs permission pull-requests write). No comment is posted while there is no drift.
+    default: "false"
+  github-token:
+    description: Token for the pull request comment.
+    default: ${{ github.token }}
   fail-on-drift:
     description: Fail the step when drift is found (exit code 1).
     default: "true"
@@ -103,6 +109,17 @@ runs:
       with:
         sarif_file: ${{ inputs.out }}/report.sarif
         category: archdrift
+
+    - name: Comment on the pull request
+      if: always() && inputs.comment == 'true' && github.event.pull_request.number && (steps.check.outputs.exit-code == '0' || steps.check.outputs.exit-code == '1')
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        OUT: ${{ inputs.out }}
+        KEY: ${{ inputs.out }}
+      run: '"$GITHUB_ACTION_PATH/scripts/pr-comment.sh"'
 
     - name: Fail on drift
       if: inputs.fail-on-drift == 'true' && steps.check.outputs.exit-code == '1'

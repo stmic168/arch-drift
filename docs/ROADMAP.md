@@ -21,7 +21,8 @@ Success measures: false-positive rate under 10% on pilot repositories; under a m
 | Docs split into `docs/guide/` | #14 |
 | Versioned releases, MIT license; v0.1.0 published | #15, #16 |
 | Agent workflow: `CLAUDE.md`, roadmap, skills, `scripts/check.sh`, Dependabot | #17 |
-| Dependency diagrams read by code (`%% archdrift: dependencies`, `--no-llm`) | this PR |
+| Dependency diagrams read by code (`%% archdrift: dependencies`, `--no-llm`), README diagrams checked in CI | #18 |
+| Pull request comment from the action | this PR |
 
 ## Open
 
@@ -30,17 +31,12 @@ Success measures: false-positive rate under 10% on pilot repositories; under a m
 The most important open test: nobody but the author has used the tool on a real project. Mic runs `archdrift init --mode gate` and writes 3–5 rules, or attaches the repository to a session.
 Done when: lock reviewed, `check` run, every failing finding graded, false-positive rate recorded here.
 
-### 2. Pull request comment from the action (next)
-
-The action writes the report to the job summary only. Post (and update in place) one PR comment with failing findings and their status (new / worsened), when `comment: true`.
-Done when: the self-test workflow shows one comment that updates on a second push instead of adding another.
-
-### 3. Runtime relations from `.proto` files (todo)
+### 2. Runtime relations from `.proto` files (next)
 
 Many `UNVERIFIABLE` relations are gRPC calls. Parse `service` definitions in `.proto` files (a small hand-written parser, no dependency) and map generated clients to the serving component, so "A calls B over gRPC" becomes checkable.
 Done when: on the Thanos or Cortex pilot, the share of `UNVERIFIABLE` relations drops, with no new false positives in the offline eval.
 
-### 4. Claude GitHub Action for issues (later)
+### 3. Claude GitHub Action for issues (later)
 
 Mic opens an issue and mentions `@claude`, and the action works from `CLAUDE.md` and opens a pull request. Restricted to Mic. Uses the `ANTHROPIC_API_KEY` secret, so each run costs tokens. Do it once `CLAUDE.md` has been stable through a few pull requests.
 

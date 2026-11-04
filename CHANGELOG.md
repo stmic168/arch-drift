@@ -5,6 +5,7 @@ Releases are published by `.github/workflows/release.yml` when a tag `vX.Y.Z` on
 ## Unreleased
 
 - **Dependency diagrams**: Mermaid blocks marked `%% archdrift: dependencies` are read by Go code (arrow = depends on, `must not` label = forbidden, `Name<br/>code/id` labels). `--no-llm` builds the doc model from them alone, with no API call; otherwise they are merged into the LLM model. The as-built diagram carries the marker and code IDs, so it can be pasted into the doc and read back.
+- **Pull request comment**: the action's `comment: "true"` posts one comment with the failing findings, their status and first evidence, and updates it on later pushes (`scripts/pr-comment.sh`). `check` writes it as `comment.md`. `init` turns it on.
 - README: a pipeline diagram, and archdrift's architecture as a dependency diagram that CI checks against the code with `--no-llm` (`archdrift.readme.json`).
 - Development: `CLAUDE.md`, `docs/ROADMAP.md`, project skills (`/ship`, `/next`, `/pilot`), `scripts/check.sh`, Dependabot.
 

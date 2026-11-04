@@ -168,6 +168,7 @@ on:
 permissions:
   contents: read
   security-events: write # upload-sarif: findings on the changed lines
+  pull-requests: write # comment: one comment with the failing findings, updated on each push
 
 jobs:
   archdrift:
@@ -179,6 +180,7 @@ jobs:
           repo-path: %s
           docs: %s
           upload-sarif: "true"
+          comment: "true"
           # Only needed without a committed lock next to the doc:
           # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 `, ref, repoRel, docRel))

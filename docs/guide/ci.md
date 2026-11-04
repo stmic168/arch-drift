@@ -12,6 +12,7 @@ on: pull_request
 permissions:
   contents: read
   security-events: write   # only for upload-sarif
+  pull-requests: write     # only for comment
 jobs:
   archdrift:
     runs-on: ubuntu-latest
@@ -24,10 +25,20 @@ jobs:
           # lock: docs/architecture.lock.json  # default: next to the first doc
           # base: none                      # check everything instead of the PR diff
           upload-sarif: "true"              # annotate the PR's changed lines
+          comment: "true"                   # one PR comment, updated on each push
           # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # only without a lock
 ```
 
-Inputs: `docs`, `repo-path`, `config`, `lock`, `base`, `model`, `anthropic-api-key`, `out`, `upload-sarif`, `fail-on-drift`. Outputs: `exit-code`, `report`, `sarif`. `report.md` is added to the job summary. `.github/workflows/action-selftest.yml` runs the action against the fixture on every PR.
+Inputs: `docs`, `repo-path`, `config`, `lock`, `base`, `model`, `anthropic-api-key`, `out`, `upload-sarif`, `comment`, `github-token`, `fail-on-drift`. Outputs: `exit-code`, `report`, `sarif`. `report.md` is added to the job summary. `.github/workflows/action-selftest.yml` runs the action against the fixture on every PR.
+
+### Pull request comment
+
+With `comment: "true"` (and `pull-requests: write`), the action posts `comment.md` on the pull request: the verdict, one row per failing finding with its severity, its status against the base (`new` or `worsened`) and the evidence a reviewer opens first (the new evidence of a worsened finding, else the first `file:line`, else the doc quote), and a count of what does not fail (pre-existing, fixed, accepted, unverifiable). At most 30 rows; the rest is in the job summary.
+
+- One comment per pull request and `out` directory. Later pushes update it in place, including to "no architecture drift" once the drift is fixed. A hidden `<!-- archdrift-comment: <out> -->` line identifies it.
+- While a pull request has no drift and no earlier comment, nothing is posted.
+- A token without write access (a pull request from a fork) gives a warning, not a failure.
+- `archdrift init` turns it on in the workflow it writes.
 
 ## Pull requests: `--base` and SARIF
 
