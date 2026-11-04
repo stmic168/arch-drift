@@ -27,7 +27,7 @@ func TestNoLLMDiagramMatchesExpected(t *testing.T) {
 	}
 	var rep struct {
 		Usage   struct{ Source string } `json:"usage"`
-		Dropped []json.RawMessage        `json:"dropped_claims"`
+		Dropped []json.RawMessage       `json:"dropped_claims"`
 	}
 	b, _ := os.ReadFile(filepath.Join(out, "report.json"))
 	if err := json.Unmarshal(b, &rep); err != nil {
