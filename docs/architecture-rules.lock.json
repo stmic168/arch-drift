@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "doc_sha256": "9134ab3bd001a5a67d6c448a2e354d953c669879cc8733c29324f6b5469a7728",
+  "model": "claude-sonnet-5-5",
+  "code_ids": [
+    "cmd/archdrift",
+    "ext:anthropic",
+    "internal/codemodel",
+    "internal/config",
+    "internal/docmodel",
+    "internal/drift",
+    "internal/report"
+  ],
+  "doc_model": {
+    "components": [
+      {
+        "name": "Anthropic API",
+        "code_ids": [
+          "ext:anthropic"
+        ],
+        "quote": "**Anthropic API** is the external service the Doc model calls through the official SDK.",
+        "external": true
+      },
+      {
+        "name": "Code model",
+        "code_ids": [
+          "internal/codemodel"
+        ],
+        "quote": "**Code model** (`internal/codemodel`) scans Go imports with `go/parser`."
+      },
+      {
+        "name": "Command line",
+        "code_ids": [
+          "cmd/archdrift"
+        ],
+        "quote": "**Command line** (`cmd/archdrift`) parses flags and runs the pipeline."
+      },
+      {
+        "name": "Config",
+        "code_ids": [
+          "internal/config"
+        ],
+        "quote": "**Config** (`internal/config`) loads `archdrift.json`."
+      },
+      {
+        "name": "Doc model",
+        "code_ids": [
+          "internal/docmodel"
+        ],
+        "quote": "**Doc model** (`internal/docmodel`) extracts, verifies, caches and locks the doc model."
+      },
+      {
+        "name": "Drift engine",
+        "code_ids": [
+          "internal/drift"
+        ],
+        "quote": "**Drift engine** (`internal/drift`) compares the code model with the doc model."
+      },
+      {
+        "name": "Report",
+        "code_ids": [
+          "internal/report"
+        ],
+        "quote": "**Report** (`internal/report`) renders Markdown, JSON and SARIF."
+      }
+    ],
+    "relations": [
+      {
+        "from": "Code model",
+        "to": "Anthropic API",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "8. The Code model must not depend on the Anthropic API."
+      },
+      {
+        "from": "Code model",
+        "to": "Doc model",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "7. The Code model must not depend on the Doc model: code facts never come from the LLM."
+      },
+      {
+        "from": "Code model",
+        "to": "Drift engine",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "12. The Code model must not depend on the Drift engine."
+      },
+      {
+        "from": "Command line",
+        "to": "Code model",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "1. The Command line runs the Code model, the Doc model, the Drift engine and the Report."
+      },
+      {
+        "from": "Command line",
+        "to": "Config",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "2. The Command line loads options through the Config."
+      },
+      {
+        "from": "Command line",
+        "to": "Doc model",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "1. The Command line runs the Code model, the Doc model, the Drift engine and the Report."
+      },
+      {
+        "from": "Command line",
+        "to": "Drift engine",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "1. The Command line runs the Code model, the Doc model, the Drift engine and the Report."
+      },
+      {
+        "from": "Command line",
+        "to": "Report",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "1. The Command line runs the Code model, the Doc model, the Drift engine and the Report."
+      },
+      {
+        "from": "Config",
+        "to": "Anthropic API",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "11. The Config must not depend on the Anthropic API."
+      },
+      {
+        "from": "Config",
+        "to": "Code model",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "6. The Config builds options for the Code model and the Drift engine."
+      },
+      {
+        "from": "Config",
+        "to": "Drift engine",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "6. The Config builds options for the Code model and the Drift engine."
+      },
+      {
+        "from": "Doc model",
+        "to": "Anthropic API",
+        "kind": "required",
+        "protocol": "HTTP",
+        "quote": "3. The Doc model calls the Anthropic API."
+      },
+      {
+        "from": "Doc model",
+        "to": "Drift engine",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "13. The Doc model must not depend on the Drift engine."
+      },
+      {
+        "from": "Doc model",
+        "to": "Report",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "14. The Doc model must not depend on the Report."
+      },
+      {
+        "from": "Drift engine",
+        "to": "Anthropic API",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "9. The Drift engine must not depend on the Anthropic API: drift conclusions are deterministic."
+      },
+      {
+        "from": "Drift engine",
+        "to": "Code model",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "4. The Drift engine compares the Code model with the Doc model."
+      },
+      {
+        "from": "Drift engine",
+        "to": "Doc model",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "4. The Drift engine compares the Code model with the Doc model."
+      },
+      {
+        "from": "Drift engine",
+        "to": "Report",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "15. The Drift engine must not depend on the Report."
+      },
+      {
+        "from": "Report",
+        "to": "Anthropic API",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "10. The Report must not depend on the Anthropic API."
+      },
+      {
+        "from": "Report",
+        "to": "Command line",
+        "kind": "forbidden",
+        "protocol": "import",
+        "quote": "16. The Report must not depend on the Command line."
+      },
+      {
+        "from": "Report",
+        "to": "Drift engine",
+        "kind": "required",
+        "protocol": "import",
+        "quote": "5. The Report renders the findings of the Drift engine."
+      }
+    ]
+  }
+}

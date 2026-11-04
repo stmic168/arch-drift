@@ -280,6 +280,8 @@ Inputs: `docs`, `repo-path`, `config`, `lock`, `base`, `model`, `anthropic-api-k
 
 archdrift is strongest when the doc states rules ("A must not depend on B", "A sends to B"), for example an ADR. `pilot/docs/cortex-rules.md` is such a doc for Cortex, with ground truth in `pilot/docs/cortex-rules.expected.json` (3 violated prohibitions, 2 absent requirements, 8 rules that hold). With `pilot/cortex-rules.json` (`strict_protocols`, undocumented edges report-only), two independent pilot runs each found exactly the 5 violations with `file:line` evidence and nothing else. Prohibitions are also violated by importing the target's generated gRPC client (a protocol edge).
 
+This repository checks itself the same way: `docs/architecture-rules.md` (ADR-001) states the rules behind the core principle (only the Doc model may call the Anthropic API; the code model, drift engine, report and config never do) and the package layering, `docs/architecture-rules.lock.json` holds the reviewed mapping (7 components, 21 relations), and `.github/workflows/archdrift.yml` runs the action on every pull request. A test file in `internal/report` importing the Anthropic SDK is reported as `FORBIDDEN_EDGE Report -> Anthropic API` with its `file:line`.
+
 ### Offline evaluation
 
 `pilot/eval/` replays the pilot runs from their recorded locks without calling the API and scores failing findings against hand-graded labels, so rule changes can be measured: `pilot/eval/run.sh <archdrift binary> <work dir>`. See `pilot/eval/README.md`.
