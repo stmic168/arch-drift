@@ -52,6 +52,10 @@ pilot/eval/run.sh /tmp/archdrift /tmp/archdrift-eval
     The model leaves them unmapped rather than guess. Two `MISSING_EDGE` between
     doc components mapped to the same code component were an archdrift bug, now
     `UNVERIFIABLE`.
+    Since v0.3.0, an unmapped doc component whose name a package or exported type
+    has (`crdclient`, `TagWatcher`, `multicluster/secretcontroller.go`) is info,
+    not failing: Istio report mode 9 -> 1 (Ingress Status Controller has no
+    named code). With `locks-p07`: 42 failing (5 TP, 17 FP, 20 NOISE).
 - `labels.json` maps finding IDs to a grade: `TP` (real drift), `FP-mapping`
   (wrong because the doc mapping or relations were wrong or missing), `FP-runtime`
   (the relation exists at runtime but not as an import), `FP-actor` (an external

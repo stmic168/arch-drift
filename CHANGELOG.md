@@ -4,6 +4,10 @@ Releases are published by `.github/workflows/release.yml` when a tag `vX.Y.Z` on
 
 ## Unreleased
 
+- **Docs finer than the code components**: a doc component the doc model maps to no code ID is no longer a failing `MISSING_COMPONENT` when a package or exported type below a component has its name ("CRD Client" -> `pilot/pkg/config/kube/crdclient` inside `pilot/config`). It is info, names the code with its `file:line`, and the suggested doc updates say to map it in the lock. On the held-out Istio pilot, report-mode false positives go from 9 to 1; the other cases stay at 0, the gate pilot 5/5.
+- The scanner now reads exported type names; a file whose body uses syntax newer than the toolchain (a generic method in Istio) falls back to an imports-only parse, as before.
+- Development: `scripts/eval-compare.sh <old> <new> <work>` compares two binaries on every eval lock set, finding by finding, plus the gate pilot, and fails on a lost true positive, a missing report or a gate mismatch.
+
 ## v0.2.0 (2026-11-04)
 
 Measured on six public pilots (offline eval in `pilot/eval/`, locks from live runs with the current prompt): in report mode, 0 false positives on Thanos (two docs), Cortex, Temporal and the held-out Loki; on the held-out Istio doc, 9 false positives remain (doc parts finer than the code components; see the roadmap). The Cortex rules pilot (gate mode) finds all 5 planted violations.

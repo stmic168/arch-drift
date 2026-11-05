@@ -423,6 +423,26 @@ func TestRelationInsideOneComponent(t *testing.T) {
 	}
 }
 
+func TestUnmappedComponentWithNamedCode(t *testing.T) {
+	code := &codemodel.Model{
+		Components: []codemodel.Component{comp("pilot/config")},
+		Names: []codemodel.PackageNames{{Dir: "pilot/pkg/config/kube/crdclient", Component: "pilot/config",
+			Anchor: loc("pilot/pkg/config/kube/crdclient/client.go", 1), Segments: []string{"pilot", "pkg", "config", "kube", "crdclient"}}},
+	}
+	comps := []docmodel.Component{dc("CRD Client"), dc("Notifier")}
+	got := map[string]Finding{}
+	for _, f := range Diff(code, &docmodel.Model{Components: comps}, Options{}).Findings {
+		got[f.Subject] = f
+	}
+	if f := got["CRD Client"]; f.Type != MissingComponent || f.Failing || f.Severity != Info ||
+		len(f.Code) != 1 || f.Code[0].File != "pilot/pkg/config/kube/crdclient/client.go" || !strings.Contains(f.Message, "pilot/pkg/config/kube/crdclient (in pilot/config)") {
+		t.Errorf("unmapped component with named code: %+v", f)
+	}
+	if f := got["Notifier"]; f.Type != MissingComponent || !f.Failing {
+		t.Errorf("unmapped component with no named code: %+v, want a failing MISSING_COMPONENT", f)
+	}
+}
+
 func TestCompareBase(t *testing.T) {
 	mk := func(id string, failing bool, files ...string) Finding {
 		f := Finding{ID: id, Type: strings.SplitN(id, ":", 2)[0], Failing: failing}
