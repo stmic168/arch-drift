@@ -6,6 +6,8 @@ How to use this file: items are in priority order. Status is `done`, `next` (the
 
 Success measures: false-positive rate under 10% on pilot repositories; under a minute to act on a finding; fewer `UNVERIFIABLE` relations over time.
 
+Dates: [`release-plan.md`](release-plan.md) puts these items into weekly releases up to v1.0.0.
+
 ## Done
 
 | Item | PR |
