@@ -76,6 +76,7 @@ flowchart LR
 | [Development](docs/guide/development.md) | status, layout, tests, this repository's CI, releases, pilots, offline evaluation |
 | [Changelog](CHANGELOG.md) | what each release contains |
 | [Roadmap](docs/ROADMAP.md) | what is done and what comes next |
+| [Release plan](docs/release-plan.md) | weekly releases to v1.0.0 (Nov 2026 – Jan 2027) |
 
 This repository checks itself against [ADR-001](docs/architecture-rules.md) and the architecture diagram above on every pull request.
 

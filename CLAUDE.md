@@ -17,6 +17,7 @@ Working rules for Claude sessions in this repository. Read this first; it replac
 
 ## Where things are
 
+- Release plan (one release every Thursday, to v1.0.0 on Dec 31): `docs/release-plan.md`, with the weekly release gate.
 - Roadmap and the next task: `docs/ROADMAP.md`. "Do the next step" means the first item with status `next`, or the first `todo` if none is `next`.
 - User docs: `README.md` (index) and `docs/guide/` (usage, configuration, ci, how-it-works, development).
 - Release notes: `CHANGELOG.md` (an `## Unreleased` section collects changes until the next tag).
