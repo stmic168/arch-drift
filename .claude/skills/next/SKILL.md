@@ -9,7 +9,7 @@ description: Continue the arch-drift roadmap - check CI on main after a merge, t
 2. **Roadmap bookkeeping.** In `docs/ROADMAP.md`, mark items whose PR has merged as `done` (with the PR number) if they are not already.
 3. **Pick the item.** The `next` item, else the first `todo`. Skip `blocked` items, but mention them to Mic if Mic can unblock them (for example the release or repository access).
 4. **Plan briefly.** Read the item's "Done when". If it needs a decision only Mic can make (cost, public effect, scope), ask one question before building. Otherwise go.
-5. **Build** on a new branch from `origin/main`, following `CLAUDE.md`. Tests first where practical. Measure against "Done when" (offline eval in `pilot/eval/` for anything that changes findings).
+5. **Build** on a new branch from `origin/main`, following `CLAUDE.md`. Tests first where practical. Measure against "Done when": for anything that changes findings, build the binary before and after and run `scripts/eval-compare.sh <old> <new> <work dir>`; it must exit 0.
 6. **Update the roadmap.** Mark the item `done` ("this PR") and set the following item to `next`.
 7. **Run `scripts/check.sh`, commit, push.** Do not open the PR unless Mic asked (then use `/ship`).
 8. **Report**: CI result on `main`, what was built, how it measured against "Done when", what Mic should decide (usually: open the PR?).

@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -52,6 +53,21 @@ type Model struct {
 	// relation but are not reported as undocumented dependencies.
 	ProtocolEdges []Edge   `json:"protocol_edges"`
 	Coverage      Coverage `json:"coverage"`
+	// Names indexes the names in each modeled package (directory segments,
+	// file names, exported type names), to suggest code for a doc component
+	// the doc model left unmapped. Not written to reports.
+	Names []PackageNames `json:"-"`
+}
+
+// PackageNames are the names found in one package, normalized to lower-case
+// letters and digits.
+type PackageNames struct {
+	Dir       string
+	Component string
+	Anchor    Location // first file of the package
+	Segments  []string // directory segments
+	Files     []string // file names without .go
+	Types     []string // exported type names
 }
 
 // Coverage says how much of the repo the components cover. Excluded
@@ -308,6 +324,7 @@ func Scan(repo string, opts Options) (*Model, error) {
 	fset := token.NewFileSet()
 	comps := map[string]*Component{}
 	pkgSeen := map[string]map[string]bool{}
+	names := map[string]*PackageNames{}
 	edges := map[[2]string]map[Location]bool{}
 	protoEdges := map[[2]string]map[Location]bool{}
 	pkgDirs := map[string]bool{}     // every scanned package dir
@@ -361,9 +378,17 @@ func Scan(repo string, opts Options) (*Model, error) {
 			return nil
 		}
 		modeledDirs[dir] = true
-		f, err := parser.ParseFile(fset, p, nil, parser.ImportsOnly)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", rel, err)
+		// A full parse gives the type names for PackagesNamed; it can fail
+		// on syntax newer than this toolchain inside function bodies, so
+		// imports come from an imports-only parse in that case, as before,
+		// and the names from whatever the full parse got through.
+		full, ferr := parser.ParseFile(fset, p, nil, parser.SkipObjectResolution)
+		f := full
+		if ferr != nil {
+			var err error
+			if f, err = parser.ParseFile(fset, p, nil, parser.ImportsOnly); err != nil {
+				return fmt.Errorf("parse %s: %w", rel, err)
+			}
 		}
 		c := addComp(from, false, Location{File: rel, Line: fset.Position(f.Package).Line})
 		// Only a main package at the component root makes it a deployable; a
@@ -374,6 +399,28 @@ func Scan(repo string, opts Options) (*Model, error) {
 		if !pkgSeen[from][dir] {
 			pkgSeen[from][dir] = true
 			c.Packages = append(c.Packages, dir)
+		}
+		pn := names[dir]
+		if pn == nil {
+			pn = &PackageNames{Dir: dir, Component: from, Anchor: Location{File: rel, Line: fset.Position(f.Package).Line}}
+			for _, s := range strings.Split(dir, "/") {
+				pn.Segments = append(pn.Segments, NormalizeName(s))
+			}
+			names[dir] = pn
+		}
+		pn.Files = append(pn.Files, NormalizeName(strings.TrimSuffix(name, ".go")))
+		var decls []ast.Decl
+		if full != nil {
+			decls = full.Decls
+		}
+		for _, d := range decls {
+			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+				for _, s := range g.Specs {
+					if ts, ok := s.(*ast.TypeSpec); ok && ts.Name.IsExported() {
+						pn.Types = append(pn.Types, NormalizeName(ts.Name.Name))
+					}
+				}
+			}
 		}
 		for _, imp := range f.Imports {
 			ip, err := strconv.Unquote(imp.Path.Value)
@@ -446,6 +493,10 @@ func Scan(repo string, opts Options) (*Model, error) {
 		m.Components = append(m.Components, *c)
 	}
 	sort.Slice(m.Components, func(i, j int) bool { return m.Components[i].ID < m.Components[j].ID })
+	for _, pn := range names {
+		m.Names = append(m.Names, *pn)
+	}
+	sort.Slice(m.Names, func(i, j int) bool { return m.Names[i].Dir < m.Names[j].Dir })
 	m.Edges = buildEdges(edges, comps)
 	m.ProtocolEdges = buildEdges(protoEdges, comps)
 	return m, nil
@@ -553,4 +604,96 @@ func (m *Model) Edge(from, to string) (Edge, bool) {
 		}
 	}
 	return Edge{}, false
+}
+
+// NormalizeName lower-cases s and keeps only letters and digits, so
+// "CRD Client", "crdclient" and "CrdClient" compare equal.
+func NormalizeName(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// genericWords do not identify a component on their own ("Ingress
+// Controller" is found as ingress).
+var genericWords = map[string]bool{"controller": true, "component": true, "service": true, "module": true, "layer": true, "system": true, "the": true}
+
+// PackagesNamed returns the packages whose names match a doc component name,
+// best match first, at most three:
+//  1. a directory or exported type with the whole name ("CRD Client" ->
+//     crdclient/, "Tag Watcher" -> type TagWatcher);
+//  2. the same with generic words left out ("Ingress Controller" -> ingress/);
+//  3. for two or more remaining words, a package whose directory segments
+//     and file names contain every word ("Multicluster Secret" ->
+//     multicluster/secretcontroller.go).
+//
+// It is a suggestion for a human: it never maps a component by itself.
+func (m *Model) PackagesNamed(name string) []PackageNames {
+	var words []string
+	for _, w := range strings.FieldsFunc(name, func(r rune) bool { return r == ' ' || r == '-' || r == '_' || r == '/' }) {
+		if n := NormalizeName(w); n != "" && !genericWords[n] {
+			words = append(words, n)
+		}
+	}
+	whole, reduced := NormalizeName(name), strings.Join(words, "")
+	has := func(list []string, s string) bool {
+		for _, x := range list {
+			if x == s {
+				return true
+			}
+		}
+		return false
+	}
+	exact := func(key string) []PackageNames {
+		var out []PackageNames
+		if key == "" {
+			return nil
+		}
+		for _, p := range m.Names {
+			if p.Segments[len(p.Segments)-1] == key || has(p.Types, key) {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	found := exact(whole)
+	if len(found) == 0 && reduced != whole {
+		found = exact(reduced)
+	}
+	if len(found) == 0 && len(words) >= 2 {
+		for _, p := range m.Names {
+			tokens := append(append([]string{}, p.Segments...), p.Files...)
+			all := true
+			for _, w := range words {
+				in := false
+				for _, t := range tokens {
+					if strings.Contains(t, w) {
+						in = true
+						break
+					}
+				}
+				if !in {
+					all = false
+					break
+				}
+			}
+			if all {
+				found = append(found, p)
+			}
+		}
+	}
+	sort.SliceStable(found, func(i, j int) bool {
+		if len(found[i].Segments) != len(found[j].Segments) {
+			return len(found[i].Segments) < len(found[j].Segments)
+		}
+		return found[i].Dir < found[j].Dir
+	})
+	if len(found) > 3 {
+		found = found[:3]
+	}
+	return found
 }

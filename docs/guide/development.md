@@ -42,6 +42,10 @@ Covered: scanner on the fixture, verifier dropping fake quotes and unknown IDs, 
 - `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: `go vet`, `go test`, an offline fixture run with `--doc-model`, and a run that reads the committed `testdata/shop/design.lock.json` (both must exit 1); the README architecture diagram checked with `--no-llm` (must exit 0); and `scripts/check.sh`.
 - `.github/workflows/live-check.yml` is manual (`workflow_dispatch`) and calls the real API on the fixture (with `--no-lock`), so it costs tokens. It needs the repository secret `ANTHROPIC_API_KEY`. It runs twice (the second run must hit the cache), prints the doc model and dropped claims to the log, fails if the failing findings differ from `expected.json` (a different `UNVERIFIABLE` set is only a notice, since it depends on how the model reads runtime relations), puts `report.md` in the job summary, and uploads the reports as an artifact. You can pick a branch under **Use workflow from**. GitHub only shows **Run workflow** once the workflow file is on the default branch.
 
+## Comparing two binaries
+
+`scripts/eval-compare.sh <old binary> <new binary> <work dir>` is the release gate's eval step: it replays every lock set in `pilot/eval/` with both binaries, prints the totals and report-mode failing counts per case, lists every finding that changed, runs the Cortex gate pilot, and exits 1 on a lost true positive, an ungraded failing finding, a missing report or a gate mismatch. The work dir keeps the pilot clones between runs.
+
 ## Working with Claude
 
 Claude sessions follow [`CLAUDE.md`](../../CLAUDE.md) (conventions, limits of the cloud session) and take work from [`docs/ROADMAP.md`](../ROADMAP.md). Project skills in `.claude/skills/`:
@@ -66,7 +70,7 @@ Set once by the owner in the GitHub UI, so pull requests merge themselves once a
 ## Releases
 
 1. Add a `## vX.Y.Z (...)` section to [CHANGELOG.md](../../CHANGELOG.md) and merge it to `main`.
-2. Tag the merge commit and push the tag: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`. Or in the GitHub UI: **Releases**, **Draft a new release**, type `vX.Y.Z` under **Choose a tag** and pick **Create new tag on publish**, target `main`, leave the description empty (the changelog section fills it), **Publish release**.
+2. Tag the merge commit and push the tag: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`. Or in the GitHub UI: **Releases**, **Draft a new release**, type `vX.Y.Z` under **Choose a tag** and pick **Create new tag on publish**, target `main`, leave the description empty and do not click "Generate release notes" (the workflow fills the description from the changelog section only when it is empty), **Publish release**.
 3. `.github/workflows/release.yml` checks that the tag is on `main` and has a changelog section, runs vet and tests, builds `archdrift` for Linux, macOS (amd64, arm64) and Windows (amd64) with the version embedded (`archdrift version`), and creates the GitHub release (or completes the one made in the UI) with the archives, `checksums.txt` and the changelog section as notes.
 
 Users pin the action with `uses: stmic168/arch-drift@vX.Y.Z`; `go install ...@vX.Y.Z` reports the same version.

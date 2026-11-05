@@ -44,7 +44,7 @@ The system prompt, the doc text, and the list of component IDs (e.g. `cmd/api`, 
    | Type | Severity | Fails | Rule |
    |---|---|---|---|
    | `FORBIDDEN_EDGE` | high | yes | doc says A must not depend on B, and code has a direct import A to B |
-   | `MISSING_COMPONENT` | medium | yes | doc component maps to no code ID |
+   | `MISSING_COMPONENT` | medium (info when named code exists) | yes (no when named code exists) | doc component maps to no code ID. When a package or exported type below a component has its name (a directory or type `crdclient` for "CRD Client", the same without words like "controller", or every word in one package's path and file names), it is info and names that code: the doc describes a part finer than the components, and mapping it in the lock makes its relations checkable |
    | `MISSING_EDGE` | medium | yes | doc requires A to depend on B, the relation can be checked by static import, and there is no direct import |
    | `UNDOCUMENTED_EDGE` | low | yes | direct import between two documented components (in different doc components) that no doc relation covers |
    | `UNDOCUMENTED_COMPONENT` | info (low when configured to fail) | no by default | code component that no doc component maps to, ranked by how many components import it |

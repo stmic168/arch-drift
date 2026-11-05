@@ -412,6 +412,25 @@ func Diff(code *codemodel.Model, doc *docmodel.Model, opts Options) *Result {
 		}
 		if len(c.CodeIDs) == 0 {
 			res.MissingNodes = append(res.MissingNodes, c.Name)
+			// The doc may name a part finer than the code components (CRD
+			// Client inside pilot/config). When a package or type has its
+			// name, suggest it instead of failing: only a mapping, which a
+			// person reviews in the lock, makes its relations checkable.
+			if named := code.PackagesNamed(c.Name); len(named) > 0 {
+				var dirs []string
+				var where []codemodel.Location
+				for _, p := range named {
+					dirs = append(dirs, fmt.Sprintf("%s (in %s)", p.Dir, p.Component))
+					where = append(where, p.Anchor)
+				}
+				res.Findings = append(res.Findings, Finding{
+					ID: MissingComponent + ":" + c.Name, Type: MissingComponent, Severity: Info, Failing: false,
+					Subject: c.Name,
+					Message: fmt.Sprintf("Doc component %q is mapped to no code ID, but code with its name exists: %s. Add the component's ID to its code_ids in the lock to check its relations.", c.Name, strings.Join(dirs, ", ")),
+					Code:    where, DocQuote: c.Quote, DocFile: c.Source,
+				})
+				continue
+			}
 			res.Findings = append(res.Findings, Finding{
 				ID: MissingComponent + ":" + c.Name, Type: MissingComponent, Severity: Medium, Failing: true,
 				Subject: c.Name, Message: fmt.Sprintf("Doc component %q has no matching package in code.", c.Name),

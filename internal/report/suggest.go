@@ -47,6 +47,9 @@ func Suggestions(r *Report) []string {
 			out = append(out, fmt.Sprintf("**Code or doc:** add the dependency %s, or update the doc sentence if it no longer holds: %s", f.Subject, quoted(f.DocQuote)))
 		case f.Type == drift.MissingComponent && f.Failing:
 			out = append(out, fmt.Sprintf("**Doc:** %q has no code. Implement it, mark it `\"external\": true` in the lock if it lives outside this repository, or remove it from the doc: %s", f.Subject, quoted(f.DocQuote)))
+		case f.Type == drift.MissingComponent:
+			// Not failing: code with the component's name exists below a mapped component.
+			out = append(out, fmt.Sprintf("**Lock:** map %q to the component holding %s (add its ID to `code_ids` in the lock), so its relations are checked; or mark it `\"external\": true` if the doc means something outside this repository.", f.Subject, firstEvidence(f)))
 		case f.Type == drift.UndocumentedEdge:
 			out = append(out, fmt.Sprintf("**Doc:** describe the dependency %s (%s), e.g. a sentence or a diagram arrow, or remove the import if it should not exist.", f.Subject, firstEvidence(f)))
 		case f.Type == drift.UndocumentedComponent && f.Weight > 0 && components < maxComponentSuggestions:

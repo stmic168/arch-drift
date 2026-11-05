@@ -263,3 +263,52 @@ func TestProtocolPackages(t *testing.T) {
 		t.Errorf("shared = %v", m.Coverage.Shared)
 	}
 }
+
+// Syntax this toolchain cannot parse inside a body (here a generic method)
+// must not break the scan: imports still come from an imports-only parse.
+func TestScanSurvivesUnparsableBody(t *testing.T) {
+	root := t.TempDir()
+	write := func(p, s string) {
+		os.MkdirAll(filepath.Join(root, filepath.Dir(p)), 0o755)
+		os.WriteFile(filepath.Join(root, p), []byte(s), 0o644)
+	}
+	write("go.mod", "module example.com/m\n\ngo 1.25\n")
+	write("pkg/b/b.go", "package b\n\ntype CrdClient struct{}\n")
+	write("pkg/a/a.go", "package a\n\nimport _ \"example.com/m/pkg/b\"\n\ntype T struct{}\n\nfunc (T) M[U any]() {}\n")
+	m, err := Scan(root, Options{})
+	if err != nil {
+		t.Fatalf("scan failed on an unparsable body: %v", err)
+	}
+	if _, ok := m.Edge("pkg/a", "pkg/b"); !ok {
+		t.Errorf("import from the unparsable file lost: %+v", m.Edges)
+	}
+	if got := m.PackagesNamed("CRD Client"); len(got) != 1 || got[0].Dir != "pkg/b" {
+		t.Errorf("PackagesNamed(CRD Client) = %+v, want pkg/b (exported type CrdClient)", got)
+	}
+}
+
+func TestPackagesNamed(t *testing.T) {
+	m := &Model{Names: []PackageNames{
+		{Dir: "pilot/pkg/config/kube/crdclient", Segments: []string{"pilot", "pkg", "config", "kube", "crdclient"}, Files: []string{"client"}},
+		{Dir: "pilot/pkg/config/kube/ingress", Segments: []string{"pilot", "pkg", "config", "kube", "ingress"}, Files: []string{"controller"}},
+		{Dir: "pkg/kube/multicluster", Segments: []string{"pkg", "kube", "multicluster"}, Files: []string{"secretcontroller"}},
+		{Dir: "pkg/revisions", Segments: []string{"pkg", "revisions"}, Types: []string{"tagwatcher"}},
+		{Dir: "pkg/store", Segments: []string{"pkg", "store"}},
+	}}
+	for name, want := range map[string]string{
+		"CRD Client":          "pilot/pkg/config/kube/crdclient", // directory
+		"Tag Watcher":         "pkg/revisions",                   // exported type
+		"Ingress Controller":  "pilot/pkg/config/kube/ingress",   // generic word dropped
+		"Multicluster Secret": "pkg/kube/multicluster",           // every word in path or file names
+		"Notifier":            "",                                // nothing: stays MISSING_COMPONENT
+		"Payment Service":     "",
+	} {
+		got := m.PackagesNamed(name)
+		switch {
+		case want == "" && len(got) != 0:
+			t.Errorf("%s: matched %+v, want nothing", name, got)
+		case want != "" && (len(got) == 0 || got[0].Dir != want):
+			t.Errorf("%s: %+v, want %s first", name, got, want)
+		}
+	}
+}
