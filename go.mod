@@ -2,7 +2,7 @@ module github.com/stmic168/arch-drift
 
 go 1.25
 
-require github.com/anthropics/anthropic-sdk-go/v2 v2.4.0
+require github.com/anthropics/anthropic-sdk-go/v2 v2.7.0
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
