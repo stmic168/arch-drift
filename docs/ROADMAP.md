@@ -30,7 +30,8 @@ Dates: [`release-plan.md`](release-plan.md) puts these items into weekly release
 | Relations wired by the binary: report mode 0 false positives on all 4 pilots | #23 |
 | Held-out pilots (Loki 0 FP, Istio 9 FP); relation inside one component is UNVERIFIABLE; v0.2.0 | #24 |
 | Release plan to v1.0.0 | #25 |
-| Docs finer than the code components: named code suggested, Istio report-mode FP 9 -> 1; `scripts/eval-compare.sh` (v0.3.0) | this PR |
+| Docs finer than the code components: named code suggested, Istio report-mode FP 9 -> 1; `scripts/eval-compare.sh` (v0.3.0) | #26 |
+| `init` that fits the repository: `services` proposed (Thanos 6/6, Cortex 13/13, Loki 12/12; 4 extra runnable targets), `pilot/pkg` split on Istio; init configs give the same findings as the hand-written ones (v0.4.0) | this PR |
 
 ## Open
 
@@ -39,10 +40,10 @@ Dates: [`release-plan.md`](release-plan.md) puts these items into weekly release
 The most important open test: nobody but the author has used the tool on a real project. Mic runs `archdrift init --mode gate` and writes 3–5 rules, or attaches the repository to a session.
 Done when: lock reviewed, `check` run, every failing finding graded, false-positive rate recorded here.
 
-### 2. `init` that fits the repository (next, v0.4.0)
+### 2. Pilot guide for a real project (next, v0.5.0)
 
-Every pilot needed a hand-written config: `services` for Thanos, Cortex and Loki, and a split of `pilot/pkg` for Istio. `init` should propose `services` when one deployable has a file per service (`cmd/thanos/rule.go` next to `pkg/rules`) or a module list, and split a merged component whose children the doc names (plain text, no LLM).
-Done when: on Thanos, Cortex and Loki, `init` proposes at least 80% of the services in the hand-written pilot configs and no component that is not a service; on Istio it splits `pilot/pkg`.
+`docs/guide/pilot-your-repo.md`: install a release, `init --mode gate`, write 3–5 rules, `lock` (only the doc and component IDs leave the machine), `check`, and what to send back for grading. It is the fallback of v0.5.0 if item 1 stays blocked, plus two more held-out public pilots.
+Done when: the guide exists and a first-time user can follow it from install to a graded `report.json`.
 
 ### 3. Claude GitHub Action for issues (later)
 

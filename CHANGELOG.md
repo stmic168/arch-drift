@@ -4,6 +4,12 @@ Releases are published by `.github/workflows/release.yml` when a tag `vX.Y.Z` on
 
 ## Unreleased
 
+Measured on the pilots at their pinned commits (no API call): `init` alone now produces the configs the pilots needed by hand. Replaying every eval lock set with the `init`-generated configs instead of the hand-written ones gives the same findings, finding by finding. `scripts/eval-compare.sh` against v0.3.0: no change on any lock set; Cortex gate pilot 5/5.
+
+- **`init` proposes `services`** from a file per service in a binary (`cmd/thanos/rule.go` imports `pkg/rules`) or a dskit module list (`RegisterModule` calls; helper modules skipped). Thanos 6 of 6, Cortex 13 of 13, Loki 12 of 12 of the hand-written services; also four runnable targets the hand-written configs left out (Cortex `pkg/flusher`; Loki `pkg/limits`, `pkg/logline`, `pkg/labelaccess`), so the roadmap's "no component that is not a service" holds only if those count as services. Temporal: none proposed.
+- **`init` splits a package bucket the doc describes**: `<top>/pkg` becomes one component per child when the doc's headings, code spans or bold text name code in at least 3 of its children and in at least a quarter of them. Istio: `pilot/pkg` is split (6 of 20 children named) and the generated config equals the hand-written `pilot/istio.json`; `istioctl/pkg` (4 of 30) is not.
+- Configuration guide: "Choosing services".
+
 ## v0.3.0 (2026-11-05)
 
 Measured with `scripts/eval-compare.sh` against v0.2.0 on the offline eval (locks from live runs with the current prompt): report-mode false positives are 0 on Thanos (two docs), Cortex, Temporal and Loki, and 1 on the held-out Istio doc (was 9). No true positive lost; the Cortex rules pilot (gate mode) still finds all 5 planted violations.
