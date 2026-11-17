@@ -29,6 +29,7 @@ var initExcludeNames = map[string]bool{
 type initPlan struct {
 	Components []initComponent
 	Exclude    []string
+	Services   []string // components run as separate services in one binary
 }
 
 type initComponent struct {
@@ -132,6 +133,9 @@ func initConfig(plan initPlan, mode string) []byte {
 	}
 	if len(plan.Exclude) > 0 {
 		c["exclude"] = plan.Exclude
+	}
+	if len(plan.Services) > 0 {
+		c["services"] = plan.Services
 	}
 	// Both modes list undocumented dependencies without failing: a rules doc
 	// or an overview doc does not enumerate every import. Gate mode trusts
@@ -262,6 +266,21 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(fmt.Errorf("scan repo: %w", err))
 	}
+	m0, err := codemodel.Scan(repo, planOptions(plan))
+	if err != nil {
+		return fail(fmt.Errorf("scan repo: %w", err))
+	}
+	// A doc that names code inside a bucket such as pilot/pkg describes that
+	// bucket's parts: one component per child makes its relations checkable.
+	var split map[string][]string
+	if b, err := os.ReadFile(doc); err == nil {
+		if plan, split = splitBuckets(plan, m0, docNames(string(b))); len(split) > 0 {
+			if m0, err = codemodel.Scan(repo, planOptions(plan)); err != nil {
+				return fail(fmt.Errorf("scan repo: %w", err))
+			}
+		}
+	}
+	plan.Services = proposeServices(repo, m0, planOptions(plan))
 
 	written := []string{}
 	write := func(p string, content []byte) error {
@@ -325,6 +344,17 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "\nmode %s; %d components proposed in %s, %d excluded; coverage %d of %d Go packages (%d%%)\n",
 		mode, len(plan.Components), config.FileName, len(plan.Exclude), m.Coverage.Modeled, m.Coverage.Packages, m.Coverage.Percent())
+	var buckets []string
+	for id := range split {
+		buckets = append(buckets, id)
+	}
+	sort.Strings(buckets)
+	for _, id := range buckets {
+		fmt.Fprintf(stdout, "split %s into its subdirectories: the doc names code in %s\n", id, strings.Join(split[id], ", "))
+	}
+	if len(plan.Services) > 0 {
+		fmt.Fprintf(stdout, "services (run separately inside one binary): %s\n", strings.Join(plan.Services, ", "))
+	}
 	fmt.Fprintf(stdout, `
 Next steps:
   1. Review %s (rename or merge components; archdrift scan --repo %s shows the model).

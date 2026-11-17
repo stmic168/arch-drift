@@ -49,4 +49,15 @@ Optional, at the repo root (or `--config`). JSON rather than YAML because the st
 | `transitive.required` | A required relation is also satisfied by an import path through other components (e.g. `api -> store -> ext:postgres` satisfies "API uses Postgres"). Each hop still needs its own doc relation, or it shows as `UNDOCUMENTED_EDGE`. |
 | `transitive.forbidden` | A forbidden relation is also violated by an indirect path. The finding lists the path and the `file:line` of each hop. |
 
+## Choosing services
+
+List a component in `services` when it runs as its own process although it is built into a shared binary: one `cmd/` whose flag or target picks the mode (`thanos rule`, `cortex -target=ingester`). Do not list libraries the services share (`pkg/ring`, `pkg/util`) or a component that is its own deployable (it already has a `main` package).
+
+`archdrift init` proposes the list from two code signals, with no API call:
+
+- **A file per service in the binary**: `cmd/thanos/rule.go` imports `pkg/rules` and has its name (singular or plural, `query_frontend.go` for `pkg/queryfrontend`). It takes at least two such files; a binary with one mode has no services to list.
+- **A module list**: `RegisterModule(Name, t.initName)` calls, as in the dskit module manager used by Cortex and Loki. Modules marked `UserInvisibleModule` are helpers and `all` is every module, so they are skipped. A module is the component with its whole name (`store-gateway` -> `pkg/storegateway`), otherwise the one component its init function uses whose name contains a word of the module name (`query-frontend` -> `pkg/lokifrontend`, `bloom-planner` -> `pkg/bloombuild`).
+
+Review the list: every runnable target qualifies, including ones your doc never mentions. On the pilots, `init` proposed every service of the hand-written configs (Thanos 6 of 6, Cortex 13 of 13, Loki 12 of 12) and four targets they left out (Cortex `pkg/flusher`; Loki `pkg/limits`, `pkg/logline`, `pkg/labelaccess`). Extra entries matter only when the doc relates two of them; on the pilots the findings were identical with either list.
+
 A component is a deployable (separately run program) when a `main` package sits at its root directory (`cmd/x`, or the configured path), whatever the layout. A helper tool nested deeper inside a component does not count. Deployables drive the `UNVERIFIABLE` rule.
